@@ -1,0 +1,10 @@
+*.vsidx
+/.vs
+/API/bin
+/API/obj
+/Application/obj
+/Core/bin
+/Core/obj
+/Infrastructure/bin
+/Infrastructure/obj
+/Application/bin
