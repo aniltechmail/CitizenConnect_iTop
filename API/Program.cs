@@ -1,14 +1,16 @@
-using System.Text;
 using Application.Services;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Infrastructure.Data;
 using Infrastructure.Repositories;
 using Infrastructure.Seeds;
+using Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 
 namespace API
 {
@@ -24,10 +26,14 @@ namespace API
             // Repositories
             builder.Services.AddScoped<ILocationRepository, LocationRepository>();
             builder.Services.AddScoped<ICitizenRepository, CitizenRepository>();
+            builder.Services.AddScoped<IComplaintRepository, ComplaintRepository>();
+            builder.Services.AddScoped<IInternalUserRepository, InternalUserRepository>();
 
             // Services
             builder.Services.AddScoped<ILocationService, LocationService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
+            builder.Services.AddScoped<IComplaintService, ComplaintService>();
+            builder.Services.AddScoped<IStorageService, LocalStorageService>();
 
             // JWT Authentication
             var jwtKey = builder.Configuration["Jwt:Key"]!;
@@ -88,6 +94,16 @@ namespace API
             app.UseSwaggerUI();
             app.UseAuthentication();
             app.UseAuthorization();
+
+            // Serve uploaded files
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+                    Path.Combine(Directory.GetCurrentDirectory(), "uploads")
+                ),
+                RequestPath = "/uploads"
+            });
+
             app.MapControllers();
             await app.RunAsync();
         }

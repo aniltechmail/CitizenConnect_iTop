@@ -21,6 +21,7 @@ namespace Infrastructure.Seeds
             await SeedCategoriesAsync(db);
             await SeedSlaPoliciesAsync(db);
             await SeedAdminUserAsync(db);
+            await SeedInternalUsersAsync(db);
         }
 
         private static async Task SeedLocationsAsync(AppDbContext db)
@@ -131,6 +132,54 @@ namespace Infrastructure.Seeds
                 IsActive = true
             };
             db.InternalUsers.Add(admin);
+            await db.SaveChangesAsync();
+        }
+
+        private static async Task SeedInternalUsersAsync(AppDbContext db)
+        {
+            if (await db.InternalUsers.AnyAsync()) return;
+
+            var users = new[]
+            {
+        new InternalUser
+        {
+            FullName = "System Administrator",
+            Email = "admin@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
+            Role = UserRole.Admin,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        },
+        new InternalUser
+        {
+            FullName = "Test Assigner",
+            Email = "assigner@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Assigner@123"),
+            Role = UserRole.Assigner,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        },
+        new InternalUser
+        {
+            FullName = "Test Field Agent",
+            Email = "agent@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Agent@123"),
+            Role = UserRole.FieldAgent,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        },
+        new InternalUser
+        {
+            FullName = "Test Supervisor",
+            Email = "supervisor@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Supervisor@123"),
+            Role = UserRole.Supervisor,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        }
+    };
+
+            db.InternalUsers.AddRange(users);
             await db.SaveChangesAsync();
         }
     }
