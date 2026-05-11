@@ -1,12 +1,17 @@
-﻿using System;
+﻿using Core.DTOs.Auth;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+
 namespace Core.Interfaces.Services
 {
-    internal interface IAuthService
+    public interface IAuthService
     {
+        Task<AuthResponseDto> RegisterCitizenAsync(CitizenRegisterDto dto);
+        Task<AuthResponseDto> LoginCitizenAsync(LoginDto dto);
+        Task<AuthResponseDto> LoginInternalUserAsync(LoginDto dto);
     }
 }

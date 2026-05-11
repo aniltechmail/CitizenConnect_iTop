@@ -6,7 +6,10 @@ using System.Threading.Tasks;
 
 namespace Core.Enums
 {
-    internal class SenderType
+    public enum SenderType
     {
+        Citizen = 0,
+        Agent = 1,
+        System = 2
     }
 }

@@ -6,7 +6,11 @@ using System.Threading.Tasks;
 
 namespace Core.Enums
 {
-    internal class UserRole
+    public enum UserRole
     {
+        Admin = 0,
+        Assigner = 1,
+        FieldAgent = 2,
+        Supervisor = 3
     }
 }
