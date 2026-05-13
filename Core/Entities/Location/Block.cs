@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Core.Entities.Identity;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,7 +7,17 @@ using System.Threading.Tasks;
 
 namespace Core.Entities.Location
 {
-    internal class Block
+    public class Block
     {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public int AreaId { get; set; }
+        public Area Area { get; set; } = null!;
+
+        public ICollection<Citizen> Citizens { get; set; } = new List<Citizen>();
     }
 }

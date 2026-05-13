@@ -6,7 +6,11 @@ using System.Threading.Tasks;
 
 namespace Core.Enums
 {
-    internal class MediaType
+    public enum MediaType
     {
+        Image = 0,
+        Video = 1,
+        Voice = 2,
+        Document = 3
     }
 }

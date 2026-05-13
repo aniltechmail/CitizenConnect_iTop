@@ -6,7 +6,10 @@ using System.Threading.Tasks;
 
 namespace Core.Enums
 {
-    internal class SyncStatus
+    public enum SyncStatus
     {
+        PendingSync = 0,
+        Synced = 1,
+        SyncFailed = 2
     }
 }

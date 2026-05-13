@@ -8,3 +8,15 @@
 /Infrastructure/bin
 /Infrastructure/obj
 /Application/bin
+/citizen_connect_python/.idea
+/citizen_connect_python/app/__pycache__
+/citizen_connect_python/app/models/__pycache__
+/citizen_connect_python/app/repositories/__pycache__
+/citizen_connect_python/app/routers/__pycache__
+/citizen_connect_python/app/schemas/__pycache__
+/citizen_connect_python/app/services/__pycache__
+/citizen_connect_python/venv/Lib/site-packages/__pycache__
+/citizen_connect_python/venv/Lib
+/citizen_connect_python/venv
+/API/uploads
+/citizen_connect_python/uploads
