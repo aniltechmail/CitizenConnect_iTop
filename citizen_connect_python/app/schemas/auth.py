@@ -1,13 +1,19 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator
 import re
 
 
 class CitizenRegisterSchema(BaseModel):
-    full_name: str
+    model_config = {"populate_by_name": True}
+
+    full_name: str = Field(
+        validation_alias=AliasChoices("full_name", "fullName", "FullName")
+    )
     phone: str
     email: EmailStr | None = None
     password: str
-    block_id: int
+    block_id: int = Field(
+        validation_alias=AliasChoices("block_id", "blockId", "BlockId")
+    )
 
     @field_validator("phone")
     @classmethod

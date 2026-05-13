@@ -111,6 +111,14 @@ class ComplaintRepository:
         await self.db.refresh(message)
         return message
 
+    async def add_itop_mapping(
+        self, mapping: ComplaintITopMapping
+    ) -> ComplaintITopMapping:
+        self.db.add(mapping)
+        await self.db.flush()
+        await self.db.refresh(mapping)
+        return mapping
+
     async def generate_ref_number(self) -> str:
         today = datetime.now(timezone.utc)
         prefix = f"CC{today.strftime('%Y%m%d')}"

@@ -1,0 +1,92 @@
+Requirement:
+I have iTop IT Management System up and running in my local machine with MySQL as database. 
+My intention is to use iTop as backend system and write a wrapper middle tier and a UI application may be in Python or .Net. 
+I would like my middle tier and UI agnostic of the backend system, that is keeping the iTop system replceable.
+
+For now I would like to create a citizen connect platform (a citizen grievance portal). 
+Citizens from a particular District -> Constituency -> Area -> Block log their grievance/complaint using a mobile app. 
+These complaints are in text/image/video/voice note format or a combination of these. 
+Once the complaint is logged, someone (specific role) assigns a government department to the complaint. 
+After that, another user (another role) who is well versed with that department starts physically following up with that department to get the complaint resolved. 
+There will also be a continuous conversation with the citizen on the complaint. Once the complaint is resolved, the citizen can provide feedback on it or a user can follow up with him for the feedback. 
+There will also be a workflow for SLA and escalations. So this requires a mobile app, a web API (my API) and also a web portal. 
+Mobile App consumes my API, Web API consumes iTop API. Web portal consumes my API and my API consumes iTop API.
+I would like to develop this either in Python or .Net Core. Mobile App can be parked for now.
+I am thinking of developing both .Net core and Python version of it in parallel. That means each step should be developed in .Net Core as well as in Python before moving to second step. 
+
+System Architecture:
+┌─────────────────────────────────────────────────────────────┐
+│                        CLIENTS                              │
+│   [Mobile App - Flutter]    [Web Portal - React/Blazor]     │
+└──────────────┬──────────────────────────┬───────────────────┘
+               │ HTTPS/JWT                │ HTTPS/JWT
+               ▼                          ▼
+┌────────────────────────────────────────────────────────────┐
+│             My API LAYER  (.NET Core / FastAPI)            │
+│                                                            │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │  Auth/JWT   │  │  Complaint   │  │  Notification    │   │
+│  │  Module     │  │  Service     │  │  Service (FCM)   │   │
+│  └─────────────┘  └──────────────┘  └──────────────────┘   │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │  Location   │  │  Assignment  │  │  Feedback        │   │
+│  │  Service    │  │  Service     │  │  Service         │   │
+│  └─────────────┘  └──────────────┘  └──────────────────┘   │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │  Media      │  │  SLA/        │  │  Reporting       │   │
+│  │  Service    │  │  Escalation  │  │  Service         │   │
+│  └─────────────┘  └──────────────┘  └──────────────────┘   │
+│                                                            │
+│         ┌──────────────────────────────────┐               │
+│         │   iTop Repository Adapter        │               │
+│         │   (Anti-Corruption Layer)        │               │
+│         └─────────────────┬────────────────┘               │
+│                           │                                │
+│         ┌─────────────────▼────────────────┐               │
+│         │      DB (Postgres/SQL Server)    │               │
+│         │   - Citizens, Auth, Media URLs   │               │
+│         │   - Location hierarchy           │               │
+│         │   - Feedback, Notifications      │               │
+│         └──────────────────────────────────┘               │
+└───────────────────────────┬────────────────────────────────┘
+                            │ iTop REST API (Basic Auth)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    iTop ITSM                                │
+│   Tickets · Workflows · SLA · Departments · Caselogs        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────┐
+│              File Storage (S3 / Azure Blob / Local)          │
+│              Images · Videos · Voice Notes                   │
+└──────────────────────────────────────────────────────────────┘
+
+Development Phases:
+
+Phase 1 — Foundation
+Project scaffold (.NET Core Web API)
+Database schema + EF Core migrations
+Auth module (Citizens + Internal Users + JWT)
+Location hierarchy (District/Constituency/Area/Block) seed data
+
+Phase 2 — Core Complaint Engine
+Complaint CRUD via your API
+iTop adapter: create/update/query tickets via iTop REST
+Media upload service (image/video/voice)
+Complaint status lifecycle
+
+Phase 3 — Assignment & Field Workflow
+Assigner role: department assignment
+Field Agent role: follow-up logging
+Conversation/caselog thread on complaint
+
+Phase 4 — SLA, Escalations & Notifications
+SLA policy engine (Hangfire background jobs)
+Escalation rules + event log
+Email/push notification triggers
+
+Phase 5 — Feedback & Reporting
+Post-resolution feedback flow
+Dashboard APIs (counts by status, department, location)
+Web portal (Razor/Blazor)

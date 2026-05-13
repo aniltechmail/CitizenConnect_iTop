@@ -34,8 +34,11 @@ namespace Infrastructure.Repositories
 
         public async Task<IEnumerable<Complaint>> GetByCitizenIdAsync(Guid citizenId) =>
             await _db.Complaints
+                .Include(c => c.Citizen)
+                .Include(c => c.Block)
                 .Include(c => c.Category)
                 .Include(c => c.AssignedDepartment)
+                .Include(c => c.AssignedAgent)
                 .Include(c => c.Media)
                 .Where(c => c.CitizenId == citizenId)
                 .OrderByDescending(c => c.CreatedAt)
@@ -48,7 +51,9 @@ namespace Infrastructure.Repositories
                 .Include(c => c.Citizen)
                 .Include(c => c.Category)
                 .Include(c => c.AssignedDepartment)
+                .Include(c => c.AssignedAgent)
                 .Include(c => c.Block)
+                .Include(c => c.Media)
                 .OrderByDescending(c => c.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -95,6 +100,12 @@ namespace Infrastructure.Repositories
         public async Task AddMessageAsync(ComplaintMessage message)
         {
             _db.ComplaintMessages.Add(message);
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task AddITopMappingAsync(ComplaintITopMapping mapping)
+        {
+            _db.ComplaintITopMappings.Add(mapping);
             await _db.SaveChangesAsync();
         }
 

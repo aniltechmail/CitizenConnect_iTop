@@ -1,4 +1,5 @@
 ﻿using Core.DTOs.Complaint;
+using Core.DTOs.ITop;
 using Core.Entities.Complaint;
 using Core.Enums;
 using Core.Interfaces.Repositories;
@@ -18,13 +19,20 @@ namespace Application.Services
         private readonly ILocationRepository _locationRepo;
         private readonly IInternalUserRepository _userRepo;
         private readonly IStorageService _storage;
+        private readonly IITopTicketAdapter _itopAdapter;
 
-        public ComplaintService(IComplaintRepository complaintRepo, ILocationRepository locationRepo, IInternalUserRepository userRepo, IStorageService storage)
+        public ComplaintService(
+            IComplaintRepository complaintRepo,
+            ILocationRepository locationRepo,
+            IInternalUserRepository userRepo,
+            IStorageService storage,
+            IITopTicketAdapter itopAdapter)
         {
             _complaintRepo = complaintRepo;
             _locationRepo = locationRepo;
             _userRepo = userRepo;
             _storage = storage;
+            _itopAdapter = itopAdapter;
         }
 
         public async Task<ComplaintResponseDto> SubmitComplaintAsync(Guid citizenId, SubmitComplaintDto dto)
@@ -55,6 +63,8 @@ namespace Application.Services
             // Reload with includes
             var created = await _complaintRepo.GetByIdAsync(complaint.Id)
                 ?? throw new Exception("Failed to retrieve created complaint.");
+
+            await CreateITopTicketMappingAsync(created);
 
             return MapToDto(created);
         }
@@ -99,6 +109,7 @@ namespace Application.Services
             complaint.AssignedDepartmentId = dto.DepartmentId;
             complaint.Status = ComplaintStatus.Assigned;
             complaint.AssignedAt = DateTime.UtcNow;
+            complaint.UpdatedAt = DateTime.UtcNow;
 
             await _complaintRepo.UpdateAsync(complaint);
 
@@ -117,6 +128,7 @@ namespace Application.Services
             complaint.AssignedAgentId = agentId;
             if (complaint.Status == ComplaintStatus.Assigned)
                 complaint.Status = ComplaintStatus.InProgress;
+            complaint.UpdatedAt = DateTime.UtcNow;
 
             await _complaintRepo.UpdateAsync(complaint);
 
@@ -129,7 +141,10 @@ namespace Application.Services
             var complaint = await _complaintRepo.GetByIdAsync(complaintId)
                 ?? throw new KeyNotFoundException("Complaint not found.");
 
+            ValidateStatusTransition(complaint.Status, dto.Status);
+
             complaint.Status = dto.Status;
+            complaint.UpdatedAt = DateTime.UtcNow;
 
             if (dto.Status == ComplaintStatus.Resolved)
                 complaint.ResolvedAt = DateTime.UtcNow;
@@ -161,12 +176,15 @@ namespace Application.Services
             var complaint = await _complaintRepo.GetByIdAsync(complaintId)
                 ?? throw new KeyNotFoundException("Complaint not found.");
 
-            var mediaType = DetermineMediaType(file.ContentType);
+            ValidateUpload(file);
+
+            var mediaType = DetermineMediaType(file.ContentType ?? string.Empty);
             var folder = $"complaints/{complaintId}";
+            var fileName = Path.GetFileName(file.FileName);
 
             var filePath = await _storage.SaveFileAsync(
                 file.OpenReadStream(),
-                file.FileName,
+                fileName,
                 folder
             );
 
@@ -175,7 +193,7 @@ namespace Application.Services
                 Id = Guid.NewGuid(),
                 ComplaintId = complaintId,
                 MediaType = mediaType,
-                FileName = file.FileName,
+                FileName = fileName,
                 FilePath = filePath,
                 FileSize = file.Length,
                 MimeType = file.ContentType,
@@ -206,6 +224,65 @@ namespace Application.Services
                 var ct when ct.StartsWith("audio/") => MediaType.Voice,
                 _ => MediaType.Document
             };
+
+        private static void ValidateUpload(IFormFile file)
+        {
+            const long maxBytes = 50 * 1024 * 1024;
+            if (file.Length <= 0)
+                throw new InvalidOperationException("Uploaded file is empty.");
+            if (file.Length > maxBytes)
+                throw new InvalidOperationException("Uploaded file exceeds the 50 MB limit.");
+            if (string.IsNullOrWhiteSpace(file.FileName))
+                throw new InvalidOperationException("Uploaded file name is required.");
+        }
+
+        private static void ValidateStatusTransition(ComplaintStatus current, ComplaintStatus next)
+        {
+            var allowed = current switch
+            {
+                ComplaintStatus.Submitted => new[] { ComplaintStatus.Assigned, ComplaintStatus.Rejected },
+                ComplaintStatus.Assigned => new[] { ComplaintStatus.InProgress, ComplaintStatus.Rejected },
+                ComplaintStatus.InProgress => new[] { ComplaintStatus.Resolved, ComplaintStatus.Rejected },
+                ComplaintStatus.Resolved => new[] { ComplaintStatus.Closed, ComplaintStatus.InProgress },
+                _ => Array.Empty<ComplaintStatus>()
+            };
+
+            if (!allowed.Contains(next))
+                throw new InvalidOperationException($"Invalid status transition from {current} to {next}.");
+        }
+
+        private async Task CreateITopTicketMappingAsync(Complaint complaint)
+        {
+            var result = await _itopAdapter.CreateTicketAsync(new ITopTicketCreateRequest
+            {
+                ComplaintId = complaint.Id,
+                RefNumber = complaint.RefNumber,
+                Title = complaint.Title,
+                Description = complaint.Description,
+                CitizenName = complaint.Citizen?.FullName ?? string.Empty,
+                CitizenPhone = complaint.Citizen?.Phone ?? string.Empty,
+                CategoryName = complaint.Category?.Name ?? string.Empty,
+                BlockName = complaint.Block?.Name ?? string.Empty,
+                Priority = complaint.Priority
+            });
+
+            if (!result.WasAttempted)
+                return;
+
+            var mapping = new ComplaintITopMapping
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaint.Id,
+                ITopTicketId = result.TicketId ?? string.Empty,
+                ITopTicketRef = result.TicketRef ?? string.Empty,
+                ITopClass = "UserRequest",
+                LastSyncedAt = result.Success ? DateTime.UtcNow : null,
+                SyncStatus = result.Success ? SyncStatus.Synced : SyncStatus.SyncFailed,
+                LastSyncError = result.Success ? null : result.Error
+            };
+
+            await _complaintRepo.AddITopMappingAsync(mapping);
+        }
 
         private ComplaintResponseDto MapToDto(Complaint c) => new()
         {

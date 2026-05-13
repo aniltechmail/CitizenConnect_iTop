@@ -1,5 +1,6 @@
 import os
 import uuid
+from pathlib import PurePath
 from pathlib import Path
 from app.config import settings
 
@@ -7,7 +8,7 @@ from app.config import settings
 class LocalStorageService:
     def __init__(self):
         self.base_path = Path(os.getcwd()) / "uploads"
-        self.base_url = "http://localhost:8000/uploads"
+        self.base_url = settings.file_storage_base_url
 
     async def save_file(
         self,
@@ -18,7 +19,8 @@ class LocalStorageService:
         folder_path = self.base_path / folder
         folder_path.mkdir(parents=True, exist_ok=True)
 
-        unique_name = f"{uuid.uuid4()}_{file_name}"
+        safe_name = PurePath(file_name).name or "upload"
+        unique_name = f"{uuid.uuid4()}_{safe_name}"
         file_path = folder_path / unique_name
 
         with open(file_path, "wb") as f:

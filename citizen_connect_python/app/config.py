@@ -24,5 +24,17 @@ class Settings(BaseSettings):
     db_user: str = "postgres"
     db_password: str = ""
 
+    itop_enabled: bool = True
+    itop_base_url: str = "http://localhost/itop"
+    itop_api_version: str = "1.3"
+    itop_username: str = "admin"
+    itop_password: str = "T3rm!n@t0r1"
+    itop_ticket_class: str = "UserRequest"
+    itop_organization_id: str = ""
+    itop_caller_id: str = ""
+    itop_service_id: str = ""
+    itop_service_subcategory_id: str = ""
+    file_storage_base_url: str = "http://localhost:8000/uploads"
+
 
 settings = Settings()

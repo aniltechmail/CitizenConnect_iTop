@@ -2,6 +2,7 @@ using Application.Services;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Infrastructure.Data;
+using Infrastructure.ITop;
 using Infrastructure.Repositories;
 using Infrastructure.Seeds;
 using Infrastructure.Storage;
@@ -34,6 +35,7 @@ namespace API
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IComplaintService, ComplaintService>();
             builder.Services.AddScoped<IStorageService, LocalStorageService>();
+            builder.Services.AddHttpClient<IITopTicketAdapter, ITopTicketAdapter>();
 
             // JWT Authentication
             var jwtKey = builder.Configuration["Jwt:Key"]!;

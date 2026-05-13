@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile
 
-from app.models.complaint import Complaint, ComplaintMedia, ComplaintMessage
+from app.models.complaint import (
+    Complaint, ComplaintMedia, ComplaintMessage, ComplaintITopMapping
+)
 from app.repositories.complaint_repository import ComplaintRepository
 from app.repositories.internal_user_repository import InternalUserRepository
 from app.repositories.location_repository import LocationRepository
@@ -12,6 +14,7 @@ from app.schemas.complaint import (
     PagedComplaintsSchema, ComplaintStatus, MediaTypeEnum, SenderTypeEnum
 )
 from app.services.storage_service import LocalStorageService
+from app.services.itop_adapter import ITopTicketAdapter, ITopTicketCreateRequest
 import uuid
 
 
@@ -22,6 +25,7 @@ class ComplaintService:
         self.user_repo = InternalUserRepository(db)
         self.location_repo = LocationRepository(db)
         self.storage = LocalStorageService()
+        self.itop_adapter = ITopTicketAdapter()
 
     async def submit_complaint(
         self,
@@ -57,6 +61,7 @@ class ComplaintService:
         created = await self.complaint_repo.get_by_id(complaint.id)
         if not created:
             raise Exception("Failed to retrieve created complaint.")
+        await self._create_itop_ticket_mapping(created)
         return self._map_to_schema(created)
 
     async def get_by_id(self, complaint_id: uuid.UUID) -> ComplaintResponseSchema:
@@ -148,6 +153,7 @@ class ComplaintService:
         if not complaint:
             raise KeyError("Complaint not found.")
 
+        self._validate_status_transition(complaint.status, dto.status)
         complaint.status = dto.status
         complaint.updated_at = datetime.now(timezone.utc)
 
@@ -183,7 +189,12 @@ class ComplaintService:
         if not complaint:
             raise KeyError("Complaint not found.")
 
+        self._validate_upload(file)
         content = await file.read()
+        if len(content) == 0:
+            raise ValueError("Uploaded file is empty.")
+        if len(content) > 50 * 1024 * 1024:
+            raise ValueError("Uploaded file exceeds the 50 MB limit.")
         media_type = self.storage.determine_media_type(file.content_type or "")
         folder = f"complaints/{complaint_id}"
 
@@ -216,6 +227,61 @@ class ComplaintService:
         )
 
     # ── Mapper ─────────────────────────────────────────────────────────────
+
+    async def _create_itop_ticket_mapping(self, complaint: Complaint) -> None:
+        result = await self.itop_adapter.create_ticket(
+            ITopTicketCreateRequest(
+                complaint_id=str(complaint.id),
+                ref_number=complaint.ref_number,
+                title=complaint.title,
+                description=complaint.description,
+                citizen_name=complaint.citizen.full_name if complaint.citizen else "",
+                citizen_phone=complaint.citizen.phone if complaint.citizen else "",
+                category_name=complaint.category.name if complaint.category else "",
+                block_name=complaint.block.name if complaint.block else "",
+                priority=complaint.priority
+            )
+        )
+        if not result.was_attempted:
+            return
+
+        mapping = ComplaintITopMapping(
+            id=uuid.uuid4(),
+            complaint_id=complaint.id,
+            itop_ticket_ref=result.ticket_ref or "",
+            itop_ticket_id=result.ticket_id or "",
+            itop_class="UserRequest",
+            last_synced_at=datetime.now(timezone.utc) if result.success else None,
+            sync_status=1 if result.success else 2,
+            last_sync_error=None if result.success else result.error
+        )
+        await self.complaint_repo.add_itop_mapping(mapping)
+
+    @staticmethod
+    def _validate_status_transition(current: int, new_status: int) -> None:
+        allowed = {
+            ComplaintStatus.Submitted: {ComplaintStatus.Assigned, ComplaintStatus.Rejected},
+            ComplaintStatus.Assigned: {ComplaintStatus.InProgress, ComplaintStatus.Rejected},
+            ComplaintStatus.InProgress: {ComplaintStatus.Resolved, ComplaintStatus.Rejected},
+            ComplaintStatus.Resolved: {ComplaintStatus.Closed, ComplaintStatus.InProgress},
+        }
+        if new_status not in allowed.get(current, set()):
+            raise ValueError(
+                f"Invalid status transition from "
+                f"{ComplaintStatus.to_string(current)} to "
+                f"{ComplaintStatus.to_string(new_status)}."
+            )
+
+    @staticmethod
+    def _validate_upload(file: UploadFile) -> None:
+        max_bytes = 50 * 1024 * 1024
+        if not file.filename:
+            raise ValueError("Uploaded file name is required.")
+        size = getattr(file, "size", None)
+        if size is not None and size <= 0:
+            raise ValueError("Uploaded file is empty.")
+        if size is not None and size > max_bytes:
+            raise ValueError("Uploaded file exceeds the 50 MB limit.")
 
     def _map_to_schema(self, c: Complaint) -> ComplaintResponseSchema:
         return ComplaintResponseSchema(

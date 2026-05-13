@@ -24,6 +24,8 @@ namespace API.Controllers
         {
             try
             {
+                if (!IsCitizen())
+                    return Forbid();
                 var citizenId = GetUserId();
                 var result = await _complaintService.SubmitComplaintAsync(citizenId, dto);
                 return CreatedAtAction(nameof(GetById),
@@ -33,6 +35,10 @@ namespace API.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet("{id:guid}")]
@@ -41,17 +47,25 @@ namespace API.Controllers
             try
             {
                 var result = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(result.CitizenId))
+                    return Forbid();
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet("my")]
         public async Task<IActionResult> GetMyComplaints()
         {
+            if (!IsCitizen())
+                return Forbid();
             var citizenId = GetUserId();
             var result = await _complaintService.GetMyComplaintsAsync(citizenId);
             return Ok(result);
@@ -64,6 +78,9 @@ namespace API.Controllers
         {
             try
             {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
                 var userId = GetUserId();
                 var result = await _complaintService.UploadMediaAsync(id, file, userId);
                 return Ok(result);
@@ -71,6 +88,10 @@ namespace API.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
         }
 
@@ -157,5 +178,17 @@ namespace API.Controllers
 
         private Guid GetUserId() =>
             Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        private string? GetUserType() =>
+            User.FindFirstValue("user_type");
+
+        private bool IsInternalUser() =>
+            GetUserType() == "internal";
+
+        private bool IsCitizen() =>
+            GetUserType() == "citizen";
+
+        private bool CanAccessComplaint(Guid citizenId) =>
+            IsInternalUser() || citizenId == GetUserId();
     }
 }

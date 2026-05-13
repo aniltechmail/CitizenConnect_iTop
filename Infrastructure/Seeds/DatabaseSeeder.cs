@@ -20,7 +20,6 @@ namespace Infrastructure.Seeds
             await SeedDepartmentsAsync(db);
             await SeedCategoriesAsync(db);
             await SeedSlaPoliciesAsync(db);
-            await SeedAdminUserAsync(db);
             await SeedInternalUsersAsync(db);
         }
 
@@ -116,22 +115,6 @@ namespace Infrastructure.Seeds
                 IsActive = true
             });
             db.SlaPolicies.AddRange(policies);
-            await db.SaveChangesAsync();
-        }
-
-        private static async Task SeedAdminUserAsync(AppDbContext db)
-        {
-            if (await db.InternalUsers.AnyAsync()) return;
-
-            var admin = new InternalUser
-            {
-                FullName = "System Administrator",
-                Email = "admin@citizenconnect.in",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
-                Role = UserRole.Admin,
-                IsActive = true
-            };
-            db.InternalUsers.Add(admin);
             await db.SaveChangesAsync();
         }
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional
 import uuid
@@ -45,10 +45,16 @@ class SenderTypeEnum:
 # ── Request Schemas ────────────────────────────────────────────────────────
 
 class SubmitComplaintSchema(BaseModel):
+    model_config = {"populate_by_name": True}
+
     title: str
     description: str
-    category_id: int
-    block_id: int
+    category_id: int = Field(
+        validation_alias=AliasChoices("category_id", "categoryId", "CategoryId")
+    )
+    block_id: int = Field(
+        validation_alias=AliasChoices("block_id", "blockId", "BlockId")
+    )
     priority: int = 3
 
     @field_validator("priority")
@@ -69,11 +75,19 @@ class SubmitComplaintSchema(BaseModel):
 
 
 class AssignDepartmentSchema(BaseModel):
-    department_id: int
+    model_config = {"populate_by_name": True}
+
+    department_id: int = Field(
+        validation_alias=AliasChoices("department_id", "departmentId", "DepartmentId")
+    )
 
 
 class AssignAgentSchema(BaseModel):
-    agent_id: uuid.UUID
+    model_config = {"populate_by_name": True}
+
+    agent_id: uuid.UUID = Field(
+        validation_alias=AliasChoices("agent_id", "agentId", "AgentId")
+    )
 
 
 class UpdateStatusSchema(BaseModel):

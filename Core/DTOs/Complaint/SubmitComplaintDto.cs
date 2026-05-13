@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace Core.DTOs.Complaint
 {
-    public class SubmitComplaintDto
+    public class SubmitComplaintDto : IJsonOnDeserialized
     {
         [Required]
         [MaxLength(500)]
@@ -24,5 +26,28 @@ namespace Core.DTOs.Complaint
 
         [Range(1, 4)]
         public int Priority { get; set; } = 3;
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtraJson { get; set; }
+
+        public void OnDeserialized()
+        {
+            if (ExtraJson is null)
+                return;
+
+            if (CategoryId == 0 &&
+                ExtraJson.TryGetValue("category_id", out var categoryId) &&
+                categoryId.TryGetInt32(out var categoryValue))
+            {
+                CategoryId = categoryValue;
+            }
+
+            if (BlockId == 0 &&
+                ExtraJson.TryGetValue("block_id", out var blockId) &&
+                blockId.TryGetInt32(out var blockValue))
+            {
+                BlockId = blockValue;
+            }
+        }
     }
 }

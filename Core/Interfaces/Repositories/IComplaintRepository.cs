@@ -29,6 +29,7 @@ namespace Core.Interfaces.Repositories
         Task UpdateAsync(Complaint complaint);
         Task AddMediaAsync(ComplaintMedia media);
         Task AddMessageAsync(ComplaintMessage message);
+        Task AddITopMappingAsync(ComplaintITopMapping mapping);
         Task<string> GenerateRefNumberAsync();
     }
 }
