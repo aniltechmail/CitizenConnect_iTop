@@ -8,8 +8,10 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.AccessControl;
 using System.Text;
 using System.Threading.Tasks;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Application.Services
 {
@@ -113,6 +115,11 @@ namespace Application.Services
 
             await _complaintRepo.UpdateAsync(complaint);
 
+            await SyncStatusToITopAsync(
+                complaint,
+                ComplaintStatus.Assigned,
+                $"Assigned to department ID {dto.DepartmentId}");
+
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
         }
@@ -132,11 +139,22 @@ namespace Application.Services
 
             await _complaintRepo.UpdateAsync(complaint);
 
+            if (complaint.Status == ComplaintStatus.InProgress)
+            {
+                await SyncStatusToITopAsync(
+                    complaint,
+                    ComplaintStatus.InProgress,
+                    $"Field agent assigned: {agent.FullName}");
+            }
+
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
         }
 
-        public async Task<ComplaintResponseDto> UpdateStatusAsync(Guid complaintId, UpdateComplaintStatusDto dto, Guid updatedById)
+        public async Task<ComplaintResponseDto> UpdateStatusAsync(
+            Guid complaintId,
+            UpdateComplaintStatusDto dto,
+            Guid updatedById)
         {
             var complaint = await _complaintRepo.GetByIdAsync(complaintId)
                 ?? throw new KeyNotFoundException("Complaint not found.");
@@ -151,10 +169,9 @@ namespace Application.Services
             else if (dto.Status == ComplaintStatus.Closed)
                 complaint.ClosedAt = DateTime.UtcNow;
 
-            // Save complaint status change first
             await _complaintRepo.UpdateAsync(complaint);
 
-            // Add system message separately
+            // System message
             var message = new ComplaintMessage
             {
                 Id = Guid.NewGuid(),
@@ -165,6 +182,9 @@ namespace Application.Services
                 CreatedAt = DateTime.UtcNow
             };
             await _complaintRepo.AddMessageAsync(message);
+
+            // iTop sync
+            await SyncStatusToITopAsync(complaint, dto);
 
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
@@ -181,9 +201,16 @@ namespace Application.Services
             var mediaType = DetermineMediaType(file.ContentType ?? string.Empty);
             var folder = $"complaints/{complaintId}";
             var fileName = Path.GetFileName(file.FileName);
+            byte[] fileContent;
+
+            await using (var buffer = new MemoryStream())
+            {
+                await file.CopyToAsync(buffer);
+                fileContent = buffer.ToArray();
+            }
 
             var filePath = await _storage.SaveFileAsync(
-                file.OpenReadStream(),
+                new MemoryStream(fileContent),
                 fileName,
                 folder
             );
@@ -202,6 +229,7 @@ namespace Application.Services
 
             // Save media directly — don't touch the complaint entity
             await _complaintRepo.AddMediaAsync(media);
+            await SyncAttachmentToITopAsync(complaint, media, fileContent);
 
             return new ComplaintMediaResponseDto
             {
@@ -317,5 +345,71 @@ namespace Application.Services
                 CreatedAt = m.CreatedAt
             }).ToList()
         };
+
+        private async Task SyncStatusToITopAsync(
+            Complaint complaint,
+            UpdateComplaintStatusDto dto)
+        {
+            await SyncStatusToITopAsync(complaint, dto.Status, dto.Remarks);
+        }
+
+        private async Task SyncStatusToITopAsync(
+            Complaint complaint,
+            ComplaintStatus newStatus,
+            string? remarks)
+        {
+            var mapping = await _complaintRepo
+                .GetITopMappingByComplaintIdAsync(complaint.Id);
+
+            if (mapping == null || mapping.SyncStatus != SyncStatus.Synced)
+                return;
+
+            var result = await _itopAdapter.UpdateTicketAsync(new ITopTicketUpdateRequest
+            {
+                ITopTicketId = mapping.ITopTicketId,
+                ITopClass = mapping.ITopClass,
+                NewStatus = newStatus.ToString(),
+                Remarks = remarks,
+                ComplaintRefNumber = complaint.RefNumber
+            });
+
+            mapping.LastSyncedAt = DateTime.UtcNow;
+            mapping.SyncStatus = result.Success ? SyncStatus.Synced : SyncStatus.SyncFailed;
+            mapping.LastSyncError = result.Success ? null : result.Error;
+
+            await _complaintRepo.UpdateITopMappingAsync(mapping);
+        }
+
+        private async Task SyncAttachmentToITopAsync(
+            Complaint complaint,
+            ComplaintMedia media,
+            byte[] fileContent)
+        {
+            var mapping = await _complaintRepo
+                .GetITopMappingByComplaintIdAsync(complaint.Id);
+
+            if (mapping == null || mapping.SyncStatus != SyncStatus.Synced)
+                return;
+
+            var result = await _itopAdapter.CreateAttachmentAsync(new ITopAttachmentCreateRequest
+            {
+                ITopTicketId = mapping.ITopTicketId,
+                ITopClass = mapping.ITopClass,
+                FileName = media.FileName,
+                MimeType = media.MimeType ?? "application/octet-stream",
+                Content = fileContent,
+                ComplaintRefNumber = complaint.RefNumber
+            });
+
+            if (!result.WasAttempted)
+                return;
+
+            mapping.LastSyncedAt = result.Success ? DateTime.UtcNow : mapping.LastSyncedAt;
+            mapping.LastSyncError = result.Success
+                ? null
+                : $"Attachment sync failed for {media.FileName}: {result.Error}";
+
+            await _complaintRepo.UpdateITopMappingAsync(mapping);
+        }
     }
 }

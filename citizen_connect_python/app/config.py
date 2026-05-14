@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     itop_username: str = "admin"
     itop_password: str = "T3rm!n@t0r1"
     itop_ticket_class: str = "UserRequest"
-    itop_organization_id: str = ""
-    itop_caller_id: str = ""
-    itop_service_id: str = ""
-    itop_service_subcategory_id: str = ""
+    itop_organization_id: str = "1"
+    itop_caller_id: str = "1"
+    itop_service_id: str = "1"
+    itop_service_subcategory_id: str = "16"
     file_storage_base_url: str = "http://localhost:8000/uploads"
 
 
