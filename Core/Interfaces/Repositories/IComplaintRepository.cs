@@ -31,5 +31,7 @@ namespace Core.Interfaces.Repositories
         Task AddMessageAsync(ComplaintMessage message);
         Task AddITopMappingAsync(ComplaintITopMapping mapping);
         Task<string> GenerateRefNumberAsync();
+        Task<ComplaintITopMapping?> GetITopMappingByComplaintIdAsync(Guid complaintId);
+        Task UpdateITopMappingAsync(ComplaintITopMapping mapping);
     }
 }

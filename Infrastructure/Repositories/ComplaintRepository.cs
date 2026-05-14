@@ -129,5 +129,18 @@ namespace Infrastructure.Repositories
                 query = query.Where(c => c.BlockId == blockId.Value);
             return query;
         }
+
+        public async Task<ComplaintITopMapping?> GetITopMappingByComplaintIdAsync(Guid complaintId) =>
+               await _db.ComplaintITopMappings
+               .FirstOrDefaultAsync(m => m.ComplaintId == complaintId);
+
+        public async Task UpdateITopMappingAsync(ComplaintITopMapping mapping)
+        {
+            var entry = _db.Entry(mapping);
+            if (entry.State == EntityState.Detached)
+                _db.ComplaintITopMappings.Attach(mapping);
+            entry.State = EntityState.Modified;
+            await _db.SaveChangesAsync();
+        }
     }
 }

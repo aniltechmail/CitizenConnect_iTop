@@ -7,5 +7,13 @@ namespace Core.Interfaces.Services
         Task<ITopTicketCreateResult> CreateTicketAsync(
             ITopTicketCreateRequest request,
             CancellationToken cancellationToken = default);
+
+        Task<ITopTicketUpdateResult> UpdateTicketAsync(
+            ITopTicketUpdateRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<ITopAttachmentCreateResult> CreateAttachmentAsync(
+            ITopAttachmentCreateRequest request,
+            CancellationToken cancellationToken = default);
     }
 }

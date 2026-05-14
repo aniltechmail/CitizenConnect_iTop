@@ -14,7 +14,12 @@ from app.schemas.complaint import (
     PagedComplaintsSchema, ComplaintStatus, MediaTypeEnum, SenderTypeEnum
 )
 from app.services.storage_service import LocalStorageService
-from app.services.itop_adapter import ITopTicketAdapter, ITopTicketCreateRequest
+from app.services.itop_adapter import (
+    ITopTicketAdapter,
+    ITopTicketCreateRequest,
+    ITopTicketUpdateRequest,
+    ITopAttachmentCreateRequest
+)
 import uuid
 
 
@@ -27,12 +32,13 @@ class ComplaintService:
         self.storage = LocalStorageService()
         self.itop_adapter = ITopTicketAdapter()
 
+    # ── Public Methods ─────────────────────────────────────────────────────
+
     async def submit_complaint(
         self,
         citizen_id: uuid.UUID,
         dto: SubmitComplaintSchema
     ) -> ComplaintResponseSchema:
-        # Validate block exists
         block = await self.location_repo.get_block_by_id(dto.block_id)
         if not block:
             raise KeyError("Block not found.")
@@ -61,10 +67,15 @@ class ComplaintService:
         created = await self.complaint_repo.get_by_id(complaint.id)
         if not created:
             raise Exception("Failed to retrieve created complaint.")
+
+        # Create iTop ticket — non-blocking, failure doesn't fail the request
         await self._create_itop_ticket_mapping(created)
+
         return self._map_to_schema(created)
 
-    async def get_by_id(self, complaint_id: uuid.UUID) -> ComplaintResponseSchema:
+    async def get_by_id(
+        self, complaint_id: uuid.UUID
+    ) -> ComplaintResponseSchema:
         complaint = await self.complaint_repo.get_by_id(complaint_id)
         if not complaint:
             raise KeyError("Complaint not found.")
@@ -117,6 +128,14 @@ class ComplaintService:
         complaint.updated_at = datetime.now(timezone.utc)
 
         await self.complaint_repo.update(complaint)
+
+        # Sync assigned status to iTop
+        await self._sync_status_to_itop(
+            complaint,
+            ComplaintStatus.Assigned,
+            remarks=f"Assigned to department ID {dto.department_id}"
+        )
+
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
 
@@ -140,6 +159,15 @@ class ComplaintService:
         complaint.updated_at = datetime.now(timezone.utc)
 
         await self.complaint_repo.update(complaint)
+
+        # Sync InProgress status to iTop when agent is assigned
+        if complaint.status == ComplaintStatus.InProgress:
+            await self._sync_status_to_itop(
+                complaint,
+                ComplaintStatus.InProgress,
+                remarks=f"Field agent assigned: {agent.full_name}"
+            )
+
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
 
@@ -154,6 +182,7 @@ class ComplaintService:
             raise KeyError("Complaint not found.")
 
         self._validate_status_transition(complaint.status, dto.status)
+
         complaint.status = dto.status
         complaint.updated_at = datetime.now(timezone.utc)
 
@@ -164,7 +193,7 @@ class ComplaintService:
 
         await self.complaint_repo.update(complaint)
 
-        # Add system message separately
+        # System message
         message = ComplaintMessage(
             id=uuid.uuid4(),
             complaint_id=complaint_id,
@@ -175,6 +204,13 @@ class ComplaintService:
             created_at=datetime.now(timezone.utc)
         )
         await self.complaint_repo.add_message(message)
+
+        # Sync status change to iTop
+        await self._sync_status_to_itop(
+            complaint,
+            dto.status,
+            remarks=dto.remarks
+        )
 
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
@@ -195,6 +231,7 @@ class ComplaintService:
             raise ValueError("Uploaded file is empty.")
         if len(content) > 50 * 1024 * 1024:
             raise ValueError("Uploaded file exceeds the 50 MB limit.")
+
         media_type = self.storage.determine_media_type(file.content_type or "")
         folder = f"complaints/{complaint_id}"
 
@@ -216,6 +253,7 @@ class ComplaintService:
         )
 
         await self.complaint_repo.add_media(media)
+        await self._sync_attachment_to_itop(complaint, media, content)
 
         return ComplaintMediaResponseSchema(
             id=media.id,
@@ -226,44 +264,131 @@ class ComplaintService:
             created_at=media.created_at
         )
 
-    # ── Mapper ─────────────────────────────────────────────────────────────
+    # ── iTop Integration ───────────────────────────────────────────────────
 
     async def _create_itop_ticket_mapping(self, complaint: Complaint) -> None:
-        result = await self.itop_adapter.create_ticket(
-            ITopTicketCreateRequest(
-                complaint_id=str(complaint.id),
-                ref_number=complaint.ref_number,
-                title=complaint.title,
-                description=complaint.description,
-                citizen_name=complaint.citizen.full_name if complaint.citizen else "",
-                citizen_phone=complaint.citizen.phone if complaint.citizen else "",
-                category_name=complaint.category.name if complaint.category else "",
-                block_name=complaint.block.name if complaint.block else "",
-                priority=complaint.priority
+        """Create iTop ticket on complaint submission. Non-blocking — failure is logged not raised."""
+        try:
+            result = await self.itop_adapter.create_ticket(
+                ITopTicketCreateRequest(
+                    complaint_id=str(complaint.id),
+                    ref_number=complaint.ref_number,
+                    title=complaint.title,
+                    description=complaint.description,
+                    citizen_name=complaint.citizen.full_name if complaint.citizen else "",
+                    citizen_phone=complaint.citizen.phone if complaint.citizen else "",
+                    category_name=complaint.category.name if complaint.category else "",
+                    block_name=complaint.block.name if complaint.block else "",
+                    priority=complaint.priority
+                )
             )
-        )
-        if not result.was_attempted:
-            return
 
-        mapping = ComplaintITopMapping(
-            id=uuid.uuid4(),
-            complaint_id=complaint.id,
-            itop_ticket_ref=result.ticket_ref or "",
-            itop_ticket_id=result.ticket_id or "",
-            itop_class="UserRequest",
-            last_synced_at=datetime.now(timezone.utc) if result.success else None,
-            sync_status=1 if result.success else 2,
-            last_sync_error=None if result.success else result.error
-        )
-        await self.complaint_repo.add_itop_mapping(mapping)
+            if not result.was_attempted:
+                return
+
+            mapping = ComplaintITopMapping(
+                id=uuid.uuid4(),
+                complaint_id=complaint.id,
+                itop_ticket_ref=result.ticket_ref or "",
+                itop_ticket_id=result.ticket_id or "",
+                itop_class="UserRequest",
+                last_synced_at=datetime.now(timezone.utc) if result.success else None,
+                sync_status=1 if result.success else 2,  # 1=Synced 2=SyncFailed
+                last_sync_error=None if result.success else result.error
+            )
+            await self.complaint_repo.add_itop_mapping(mapping)
+
+        except Exception as e:
+            # Log but don't fail the complaint submission
+            print(f"[iTop] Failed to create ticket for complaint {complaint.ref_number}: {e}")
+
+    async def _sync_status_to_itop(
+        self,
+        complaint: Complaint,
+        new_status: int,
+        remarks: str | None = None
+    ) -> None:
+        """Sync a status change to iTop. Non-blocking — failure updates mapping but doesn't raise."""
+        try:
+            mapping = await self.complaint_repo.get_itop_mapping_by_complaint_id(
+                complaint.id
+            )
+
+            # Only sync if a ticket was successfully created in iTop
+            if not mapping or mapping.sync_status != 1:  # 1 = Synced
+                return
+
+            result = await self.itop_adapter.update_ticket(
+                ITopTicketUpdateRequest(
+                    itop_ticket_id=mapping.itop_ticket_id,
+                    itop_class=mapping.itop_class,
+                    new_status=ComplaintStatus.to_string(new_status),
+                    complaint_ref_number=complaint.ref_number,
+                    remarks=remarks
+                )
+            )
+
+            # Update mapping with sync result
+            mapping.last_synced_at = datetime.now(timezone.utc)
+            mapping.sync_status = 1 if result.success else 2  # 1=Synced 2=SyncFailed
+            mapping.last_sync_error = None if result.success else result.error
+            await self.complaint_repo.update_itop_mapping(mapping)
+
+        except Exception as e:
+            # Log but don't fail the status update
+            print(f"[iTop] Failed to sync status for complaint {complaint.ref_number}: {e}")
+
+    async def _sync_attachment_to_itop(
+        self,
+        complaint: Complaint,
+        media: ComplaintMedia,
+        content: bytes
+    ) -> None:
+        """Sync uploaded media as an iTop Attachment. Failure is recorded on the ticket mapping."""
+        try:
+            mapping = await self.complaint_repo.get_itop_mapping_by_complaint_id(
+                complaint.id
+            )
+
+            if not mapping or mapping.sync_status != 1:  # 1 = Synced
+                return
+
+            result = await self.itop_adapter.create_attachment(
+                ITopAttachmentCreateRequest(
+                    itop_ticket_id=mapping.itop_ticket_id,
+                    itop_class=mapping.itop_class,
+                    file_name=media.file_name,
+                    mime_type=media.mime_type or "application/octet-stream",
+                    content=content,
+                    complaint_ref_number=complaint.ref_number
+                )
+            )
+
+            if not result.was_attempted:
+                return
+
+            if result.success:
+                mapping.last_synced_at = datetime.now(timezone.utc)
+                mapping.last_sync_error = None
+            else:
+                mapping.last_sync_error = (
+                    f"Attachment sync failed for {media.file_name}: {result.error}"
+                )
+
+            await self.complaint_repo.update_itop_mapping(mapping)
+
+        except Exception as e:
+            print(f"[iTop] Failed to sync attachment for complaint {complaint.ref_number}: {e}")
+
+    # ── Validation ─────────────────────────────────────────────────────────
 
     @staticmethod
     def _validate_status_transition(current: int, new_status: int) -> None:
         allowed = {
-            ComplaintStatus.Submitted: {ComplaintStatus.Assigned, ComplaintStatus.Rejected},
-            ComplaintStatus.Assigned: {ComplaintStatus.InProgress, ComplaintStatus.Rejected},
-            ComplaintStatus.InProgress: {ComplaintStatus.Resolved, ComplaintStatus.Rejected},
-            ComplaintStatus.Resolved: {ComplaintStatus.Closed, ComplaintStatus.InProgress},
+            ComplaintStatus.Submitted:  {ComplaintStatus.Assigned,    ComplaintStatus.Rejected},
+            ComplaintStatus.Assigned:   {ComplaintStatus.InProgress,  ComplaintStatus.Rejected},
+            ComplaintStatus.InProgress: {ComplaintStatus.Resolved,    ComplaintStatus.Rejected},
+            ComplaintStatus.Resolved:   {ComplaintStatus.Closed,      ComplaintStatus.InProgress},
         }
         if new_status not in allowed.get(current, set()):
             raise ValueError(
@@ -274,14 +399,15 @@ class ComplaintService:
 
     @staticmethod
     def _validate_upload(file: UploadFile) -> None:
-        max_bytes = 50 * 1024 * 1024
         if not file.filename:
             raise ValueError("Uploaded file name is required.")
         size = getattr(file, "size", None)
         if size is not None and size <= 0:
             raise ValueError("Uploaded file is empty.")
-        if size is not None and size > max_bytes:
+        if size is not None and size > 50 * 1024 * 1024:
             raise ValueError("Uploaded file exceeds the 50 MB limit.")
+
+    # ── Mapper ─────────────────────────────────────────────────────────────
 
     def _map_to_schema(self, c: Complaint) -> ComplaintResponseSchema:
         return ComplaintResponseSchema(

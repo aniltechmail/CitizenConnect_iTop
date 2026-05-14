@@ -119,6 +119,22 @@ class ComplaintRepository:
         await self.db.refresh(mapping)
         return mapping
 
+    async def get_itop_mapping_by_complaint_id(
+            self, complaint_id: uuid.UUID
+    ) -> ComplaintITopMapping | None:
+        result = await self.db.execute(
+            select(ComplaintITopMapping)
+            .where(ComplaintITopMapping.complaint_id == complaint_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_itop_mapping(
+            self, mapping: ComplaintITopMapping
+    ) -> ComplaintITopMapping:
+        await self.db.flush()
+        await self.db.refresh(mapping)
+        return mapping
+
     async def generate_ref_number(self) -> str:
         today = datetime.now(timezone.utc)
         prefix = f"CC{today.strftime('%Y%m%d')}"
