@@ -48,6 +48,15 @@ class ITopTicketUpdateResult:
 
 
 @dataclass
+class ITopTicketLogRequest:
+    itop_ticket_id: str
+    itop_class: str
+    complaint_ref_number: str
+    message: str
+    is_private: bool = False
+
+
+@dataclass
 class ITopAttachmentCreateRequest:
     itop_ticket_id: str
     itop_class: str
@@ -91,6 +100,19 @@ class ITopTicketAdapter:
             )
 
         return await asyncio.to_thread(self._update_ticket_sync, request)
+
+    async def add_ticket_log(
+        self, request: ITopTicketLogRequest
+    ) -> ITopTicketUpdateResult:
+        validation_error = self._validate_ticket_settings()
+        if validation_error:
+            return ITopTicketUpdateResult(
+                was_attempted=False,
+                success=False,
+                error=validation_error
+            )
+
+        return await asyncio.to_thread(self._add_ticket_log_sync, request)
 
     async def create_attachment(
         self, request: ITopAttachmentCreateRequest
@@ -172,6 +194,37 @@ class ITopTicketAdapter:
             "class": request.itop_class,
             "key": f"SELECT {request.itop_class} WHERE id = {request.itop_ticket_id}",
             "comment": f"Status update from CitizenConnect [{request.complaint_ref_number}]",
+            "fields": fields
+        }
+
+        try:
+            body = self._post_payload(payload)
+            return self._parse_update_response(body)
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            return ITopTicketUpdateResult(
+                was_attempted=True,
+                success=False,
+                error=f"iTop returned HTTP {exc.code}: {body}"
+            )
+        except Exception as exc:
+            return ITopTicketUpdateResult(
+                was_attempted=True,
+                success=False,
+                error=str(exc)
+            )
+
+    def _add_ticket_log_sync(
+        self, request: ITopTicketLogRequest
+    ) -> ITopTicketUpdateResult:
+        fields = {
+            "private_log" if request.is_private else "public_log": request.message
+        }
+        payload = {
+            "operation": "core/update",
+            "class": request.itop_class,
+            "key": f"SELECT {request.itop_class} WHERE id = {request.itop_ticket_id}",
+            "comment": f"Message sync from CitizenConnect [{request.complaint_ref_number}]",
             "fields": fields
         }
 
