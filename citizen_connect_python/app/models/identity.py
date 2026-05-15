@@ -11,6 +11,8 @@ class UserRole(PyIntEnum):
     Assigner = 1
     FieldAgent = 2
     Supervisor = 3
+    DepartmentHead = 4
+    TopManagement = 5
 
 
 class Citizen(Base):

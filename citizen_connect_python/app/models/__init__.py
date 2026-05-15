@@ -3,6 +3,6 @@ from app.models.identity import Citizen, InternalUser, UserRole
 from app.models.master import Department, ComplaintCategory, SlaPolicy
 from app.models.complaint import (
     Complaint, ComplaintMedia, ComplaintMessage,
-    ComplaintFeedback, ComplaintITopMapping
+    ComplaintFeedback, ComplaintITopMapping, EscalationEvent
 )
 from app.models.notification import Notification

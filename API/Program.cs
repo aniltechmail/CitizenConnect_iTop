@@ -6,6 +6,7 @@ using Infrastructure.ITop;
 using Infrastructure.Repositories;
 using Infrastructure.Seeds;
 using Infrastructure.Storage;
+using API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -30,14 +31,17 @@ namespace API
             builder.Services.AddScoped<IComplaintRepository, ComplaintRepository>();
             builder.Services.AddScoped<IInternalUserRepository, InternalUserRepository>();
             builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+            builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
 
             // Services
             builder.Services.AddScoped<ILocationService, LocationService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IComplaintService, ComplaintService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
+            builder.Services.AddScoped<IEscalationService, EscalationService>();
             builder.Services.AddScoped<IStorageService, LocalStorageService>();
             builder.Services.AddHttpClient<IITopTicketAdapter, ITopTicketAdapter>();
+            builder.Services.AddHostedService<SlaEscalationBackgroundService>();
 
             // JWT Authentication
             var jwtKey = builder.Configuration["Jwt:Key"]!;

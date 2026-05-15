@@ -19,5 +19,9 @@ namespace Core.Interfaces.Services
         Task<ITopTicketUpdateResult> AddTicketLogAsync(
             ITopTicketLogRequest request,
             CancellationToken cancellationToken = default);
+
+        Task<ITopTicketUpdateResult> AddPrivateLogAsync(
+            ITopTicketLogRequest request,
+            CancellationToken cancellationToken = default);
     }
 }

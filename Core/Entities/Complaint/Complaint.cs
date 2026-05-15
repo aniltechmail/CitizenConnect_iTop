@@ -23,6 +23,7 @@ namespace Core.Entities.Complaint
         public DateTime? AssignedAt { get; set; }
         public DateTime? ResolvedAt { get; set; }
         public DateTime? ClosedAt { get; set; }
+        public bool IsSlaBreached { get; set; } = false;
 
         public Guid CitizenId { get; set; }
         public Citizen Citizen { get; set; } = null!;

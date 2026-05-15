@@ -278,6 +278,21 @@ namespace Infrastructure.ITop
             ITopTicketLogRequest request,
             CancellationToken cancellationToken = default)
         {
+            return await UpdateLogAsync(request, request.IsPrivate, cancellationToken);
+        }
+
+        public async Task<ITopTicketUpdateResult> AddPrivateLogAsync(
+            ITopTicketLogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return await UpdateLogAsync(request, true, cancellationToken);
+        }
+
+        private async Task<ITopTicketUpdateResult> UpdateLogAsync(
+            ITopTicketLogRequest request,
+            bool isPrivate,
+            CancellationToken cancellationToken)
+        {
             if (!bool.TryParse(_config["ITop:Enabled"], out var enabled) || !enabled)
                 return ITopTicketUpdateResult.Skipped("iTop integration is disabled.");
 
@@ -292,7 +307,7 @@ namespace Infrastructure.ITop
 
             var fields = new Dictionary<string, object>
             {
-                [request.IsPrivate ? "private_log" : "public_log"] = request.Message
+                [isPrivate ? "private_log" : "public_log"] = request.Message
             };
 
             var payload = new
