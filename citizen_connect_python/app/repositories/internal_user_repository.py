@@ -29,6 +29,21 @@ class InternalUserRepository:
         )
         return list(result.scalars().all())
 
+    async def get_by_role_and_department(
+        self,
+        role: int,
+        department_id: int
+    ) -> list[InternalUser]:
+        result = await self.db.execute(
+            select(InternalUser)
+            .where(
+                InternalUser.role == role,
+                InternalUser.department_id == department_id,
+                InternalUser.is_active == True
+            )
+        )
+        return list(result.scalars().all())
+
     async def update(self, user: InternalUser) -> InternalUser:
         await self.db.flush()
         await self.db.refresh(user)

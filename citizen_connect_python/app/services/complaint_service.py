@@ -3,16 +3,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile
 
 from app.models.complaint import (
-    Complaint, ComplaintMedia, ComplaintMessage, ComplaintITopMapping
+    Complaint, ComplaintMedia, ComplaintMessage, ComplaintFeedback, ComplaintITopMapping
 )
+from app.models.identity import UserRole
+from app.models.notification import Notification
 from app.repositories.complaint_repository import ComplaintRepository
 from app.repositories.internal_user_repository import InternalUserRepository
 from app.repositories.location_repository import LocationRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.schemas.complaint import (
     SubmitComplaintSchema, AssignDepartmentSchema, UpdateStatusSchema,
     ComplaintResponseSchema, ComplaintMediaResponseSchema,
-    PagedComplaintsSchema, ComplaintStatus, MediaTypeEnum, SenderTypeEnum
+    PagedComplaintsSchema, ComplaintStatus, MediaTypeEnum, SenderTypeEnum,
+    SendMessageSchema, ComplaintMessageResponseSchema,
+    SubmitFeedbackSchema, ComplaintFeedbackResponseSchema
 )
+from app.schemas.notification import NotificationType
 from app.services.storage_service import LocalStorageService
 from app.services.itop_adapter import (
     ITopTicketAdapter,
@@ -29,6 +35,7 @@ class ComplaintService:
         self.complaint_repo = ComplaintRepository(db)
         self.user_repo = InternalUserRepository(db)
         self.location_repo = LocationRepository(db)
+        self.notification_repo = NotificationRepository(db)
         self.storage = LocalStorageService()
         self.itop_adapter = ITopTicketAdapter()
 
@@ -70,6 +77,7 @@ class ComplaintService:
 
         # Create iTop ticket — non-blocking, failure doesn't fail the request
         await self._create_itop_ticket_mapping(created)
+        await self._notify_assigners(created)
 
         return self._map_to_schema(created)
 
@@ -135,6 +143,7 @@ class ComplaintService:
             ComplaintStatus.Assigned,
             remarks=f"Assigned to department ID {dto.department_id}"
         )
+        await self._notify_department_assigned(complaint)
 
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
@@ -167,6 +176,19 @@ class ComplaintService:
                 ComplaintStatus.InProgress,
                 remarks=f"Field agent assigned: {agent.full_name}"
             )
+            await self._notify_citizen(
+                complaint,
+                NotificationType.ComplaintInProgress,
+                f"Your complaint {complaint.ref_number} is now in progress."
+            )
+
+        await self._notify_user(
+            SenderTypeEnum.Agent,
+            agent.id,
+            complaint.id,
+            NotificationType.ComplaintAssigned,
+            f"Complaint {complaint.ref_number} has been assigned to you."
+        )
 
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
@@ -211,6 +233,7 @@ class ComplaintService:
             dto.status,
             remarks=dto.remarks
         )
+        await self._notify_status_changed(complaint, dto.status)
 
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)
@@ -265,6 +288,104 @@ class ComplaintService:
         )
 
     # ── iTop Integration ───────────────────────────────────────────────────
+
+    async def send_message(
+        self,
+        complaint_id: uuid.UUID,
+        dto: SendMessageSchema,
+        sender_id: uuid.UUID,
+        is_internal_user: bool
+    ) -> ComplaintMessageResponseSchema:
+        complaint = await self.complaint_repo.get_by_id(complaint_id)
+        if not complaint:
+            raise KeyError("Complaint not found.")
+
+        sender_type = self._resolve_sender_type(dto.sender_type, is_internal_user)
+        message = ComplaintMessage(
+            id=uuid.uuid4(),
+            complaint_id=complaint_id,
+            sender_type=sender_type,
+            sender_id=sender_id,
+            message=dto.message.strip(),
+            is_read=False,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        await self.complaint_repo.add_message(message)
+        await self._notify_message_recipients(complaint, message)
+        return self._map_message_to_schema(message)
+
+    async def get_messages(
+        self,
+        complaint_id: uuid.UUID
+    ) -> list[ComplaintMessageResponseSchema]:
+        complaint = await self.complaint_repo.get_by_id(complaint_id)
+        if not complaint:
+            raise KeyError("Complaint not found.")
+
+        messages = await self.complaint_repo.get_messages(complaint_id)
+        return [self._map_message_to_schema(m) for m in messages]
+
+    async def mark_message_as_read(
+        self,
+        complaint_id: uuid.UUID,
+        message_id: uuid.UUID
+    ) -> ComplaintMessageResponseSchema:
+        message = await self.complaint_repo.get_message_by_id(
+            complaint_id,
+            message_id
+        )
+        if not message:
+            raise KeyError("Message not found.")
+
+        message.is_read = True
+        await self.complaint_repo.update_message(message)
+        return self._map_message_to_schema(message)
+
+    async def submit_feedback(
+        self,
+        complaint_id: uuid.UUID,
+        dto: SubmitFeedbackSchema,
+        submitted_by_id: uuid.UUID,
+        is_internal_user: bool
+    ) -> ComplaintFeedbackResponseSchema:
+        complaint = await self.complaint_repo.get_by_id(complaint_id)
+        if not complaint:
+            raise KeyError("Complaint not found.")
+
+        if complaint.status not in {ComplaintStatus.Resolved, ComplaintStatus.Closed}:
+            raise ValueError("Feedback can be submitted only after resolution.")
+
+        existing = await self.complaint_repo.get_feedback(complaint_id)
+        if existing:
+            raise ValueError("Feedback already exists for this complaint.")
+
+        feedback = ComplaintFeedback(
+            id=uuid.uuid4(),
+            complaint_id=complaint_id,
+            citizen_id=complaint.citizen_id,
+            rating=dto.rating,
+            comments=dto.comments,
+            collected_by_id=submitted_by_id if is_internal_user else None,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        await self.complaint_repo.add_feedback(feedback)
+        return self._map_feedback_to_schema(feedback)
+
+    async def get_feedback(
+        self,
+        complaint_id: uuid.UUID
+    ) -> ComplaintFeedbackResponseSchema:
+        complaint = await self.complaint_repo.get_by_id(complaint_id)
+        if not complaint:
+            raise KeyError("Complaint not found.")
+
+        feedback = await self.complaint_repo.get_feedback(complaint_id)
+        if not feedback:
+            raise KeyError("Feedback not found.")
+
+        return self._map_feedback_to_schema(feedback)
 
     async def _create_itop_ticket_mapping(self, complaint: Complaint) -> None:
         """Create iTop ticket on complaint submission. Non-blocking — failure is logged not raised."""
@@ -409,6 +530,157 @@ class ComplaintService:
 
     # ── Mapper ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _resolve_sender_type(
+        requested_sender_type: int | None,
+        is_internal_user: bool
+    ) -> int:
+        if not is_internal_user:
+            if requested_sender_type is not None and requested_sender_type != SenderTypeEnum.Citizen:
+                raise ValueError("Citizens can send only citizen messages.")
+            return SenderTypeEnum.Citizen
+
+        if requested_sender_type == SenderTypeEnum.System:
+            return SenderTypeEnum.System
+        return SenderTypeEnum.Agent
+
+    async def _notify_assigners(self, complaint: Complaint) -> None:
+        assigners = await self.user_repo.get_by_role(int(UserRole.Assigner))
+        await self._notify_users(
+            [u.id for u in assigners],
+            SenderTypeEnum.Agent,
+            complaint.id,
+            NotificationType.ComplaintSubmitted,
+            f"New complaint {complaint.ref_number} has been submitted."
+        )
+
+    async def _notify_department_assigned(self, complaint: Complaint) -> None:
+        await self._notify_citizen(
+            complaint,
+            NotificationType.ComplaintAssigned,
+            f"Your complaint {complaint.ref_number} has been assigned to a department."
+        )
+
+        if complaint.assigned_department_id is not None:
+            agents = await self.user_repo.get_by_role_and_department(
+                int(UserRole.FieldAgent),
+                complaint.assigned_department_id
+            )
+            await self._notify_users(
+                [a.id for a in agents],
+                SenderTypeEnum.Agent,
+                complaint.id,
+                NotificationType.ComplaintAssigned,
+                f"Complaint {complaint.ref_number} has been assigned to your department."
+            )
+
+    async def _notify_status_changed(
+        self,
+        complaint: Complaint,
+        status: int
+    ) -> None:
+        if status == ComplaintStatus.InProgress:
+            await self._notify_citizen(
+                complaint,
+                NotificationType.ComplaintInProgress,
+                f"Your complaint {complaint.ref_number} is now in progress."
+            )
+        elif status == ComplaintStatus.Resolved:
+            await self._notify_citizen(
+                complaint,
+                NotificationType.ComplaintResolved,
+                f"Your complaint {complaint.ref_number} has been resolved. Please share feedback."
+            )
+
+    async def _notify_message_recipients(
+        self,
+        complaint: Complaint,
+        message: ComplaintMessage
+    ) -> None:
+        if message.sender_type == SenderTypeEnum.Citizen:
+            if complaint.assigned_agent_id:
+                await self._notify_user(
+                    SenderTypeEnum.Agent,
+                    complaint.assigned_agent_id,
+                    complaint.id,
+                    NotificationType.MessageReceived,
+                    f"New citizen message on complaint {complaint.ref_number}."
+                )
+                return
+
+            assigners = await self.user_repo.get_by_role(int(UserRole.Assigner))
+            await self._notify_users(
+                [u.id for u in assigners],
+                SenderTypeEnum.Agent,
+                complaint.id,
+                NotificationType.MessageReceived,
+                f"New citizen message on complaint {complaint.ref_number}."
+            )
+        else:
+            await self._notify_citizen(
+                complaint,
+                NotificationType.MessageReceived,
+                f"New message on your complaint {complaint.ref_number}."
+            )
+
+    async def _notify_citizen(
+        self,
+        complaint: Complaint,
+        notification_type: int,
+        message: str
+    ) -> None:
+        await self._notify_user(
+            SenderTypeEnum.Citizen,
+            complaint.citizen_id,
+            complaint.id,
+            notification_type,
+            message
+        )
+
+    async def _notify_user(
+        self,
+        user_type: int,
+        user_id: uuid.UUID,
+        complaint_id: uuid.UUID,
+        notification_type: int,
+        message: str
+    ) -> None:
+        await self.notification_repo.add(
+            Notification(
+                id=uuid.uuid4(),
+                user_type=user_type,
+                user_id=user_id,
+                complaint_id=complaint_id,
+                type=notification_type,
+                message=message,
+                is_read=False,
+                created_at=datetime.now(timezone.utc)
+            )
+        )
+
+    async def _notify_users(
+        self,
+        user_ids: list[uuid.UUID],
+        user_type: int,
+        complaint_id: uuid.UUID,
+        notification_type: int,
+        message: str
+    ) -> None:
+        notifications = [
+            Notification(
+                id=uuid.uuid4(),
+                user_type=user_type,
+                user_id=user_id,
+                complaint_id=complaint_id,
+                type=notification_type,
+                message=message,
+                is_read=False,
+                created_at=datetime.now(timezone.utc)
+            )
+            for user_id in set(user_ids)
+        ]
+        await self.notification_repo.add_many(notifications)
+
     def _map_to_schema(self, c: Complaint) -> ComplaintResponseSchema:
         return ComplaintResponseSchema(
             id=c.id,
@@ -443,4 +715,28 @@ class ComplaintService:
                 )
                 for m in c.media
             ]
+        )
+
+    @staticmethod
+    def _map_message_to_schema(m: ComplaintMessage) -> ComplaintMessageResponseSchema:
+        return ComplaintMessageResponseSchema(
+            id=m.id,
+            complaint_id=m.complaint_id,
+            sender_type=SenderTypeEnum.to_string(m.sender_type),
+            sender_id=m.sender_id,
+            message=m.message,
+            is_read=m.is_read,
+            created_at=m.created_at
+        )
+
+    @staticmethod
+    def _map_feedback_to_schema(f: ComplaintFeedback) -> ComplaintFeedbackResponseSchema:
+        return ComplaintFeedbackResponseSchema(
+            id=f.id,
+            complaint_id=f.complaint_id,
+            citizen_id=f.citizen_id,
+            rating=f.rating,
+            comments=f.comments,
+            collected_by_id=f.collected_by_id,
+            created_at=f.created_at
         )

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.config import settings
-from app.routers import auth, location, complaint
+from app.routers import auth, location, complaint, notification
 
 app = FastAPI(
     title=settings.app_name,
@@ -28,6 +28,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(auth.router)
 app.include_router(location.router)
 app.include_router(complaint.router)
+app.include_router(notification.router)
 
 
 @app.get("/", tags=["Health"])

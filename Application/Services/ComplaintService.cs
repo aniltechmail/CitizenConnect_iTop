@@ -5,13 +5,6 @@ using Core.Enums;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Microsoft.AspNetCore.Http;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.AccessControl;
-using System.Text;
-using System.Threading.Tasks;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Application.Services
 {
@@ -20,6 +13,7 @@ namespace Application.Services
         private readonly IComplaintRepository _complaintRepo;
         private readonly ILocationRepository _locationRepo;
         private readonly IInternalUserRepository _userRepo;
+        private readonly INotificationRepository _notificationRepo;
         private readonly IStorageService _storage;
         private readonly IITopTicketAdapter _itopAdapter;
 
@@ -27,12 +21,14 @@ namespace Application.Services
             IComplaintRepository complaintRepo,
             ILocationRepository locationRepo,
             IInternalUserRepository userRepo,
+            INotificationRepository notificationRepo,
             IStorageService storage,
             IITopTicketAdapter itopAdapter)
         {
             _complaintRepo = complaintRepo;
             _locationRepo = locationRepo;
             _userRepo = userRepo;
+            _notificationRepo = notificationRepo;
             _storage = storage;
             _itopAdapter = itopAdapter;
         }
@@ -67,6 +63,7 @@ namespace Application.Services
                 ?? throw new Exception("Failed to retrieve created complaint.");
 
             await CreateITopTicketMappingAsync(created);
+            await NotifyAssignersAsync(created);
 
             return MapToDto(created);
         }
@@ -119,6 +116,7 @@ namespace Application.Services
                 complaint,
                 ComplaintStatus.Assigned,
                 $"Assigned to department ID {dto.DepartmentId}");
+            await NotifyDepartmentAssignedAsync(complaint);
 
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
@@ -145,7 +143,17 @@ namespace Application.Services
                     complaint,
                     ComplaintStatus.InProgress,
                     $"Field agent assigned: {agent.FullName}");
+                await NotifyCitizenAsync(
+                    complaint,
+                    NotificationType.ComplaintInProgress,
+                    $"Your complaint {complaint.RefNumber} is now in progress.");
             }
+            await NotifyUserAsync(
+                SenderType.Agent,
+                agent.Id,
+                complaint.Id,
+                NotificationType.ComplaintAssigned,
+                $"Complaint {complaint.RefNumber} has been assigned to you.");
 
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
@@ -185,6 +193,7 @@ namespace Application.Services
 
             // iTop sync
             await SyncStatusToITopAsync(complaint, dto);
+            await NotifyStatusChangedAsync(complaint, dto.Status);
 
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);
@@ -242,6 +251,102 @@ namespace Application.Services
             };
         }
 
+        public async Task<ComplaintMessageResponseDto> SendMessageAsync(
+            Guid complaintId,
+            SendComplaintMessageDto dto,
+            Guid senderId,
+            bool isInternalUser)
+        {
+            var complaint = await _complaintRepo.GetByIdAsync(complaintId)
+                ?? throw new KeyNotFoundException("Complaint not found.");
+
+            if (string.IsNullOrWhiteSpace(dto.Message))
+                throw new InvalidOperationException("Message is required.");
+
+            var senderType = ResolveSenderType(dto.SenderType, isInternalUser);
+            var message = new ComplaintMessage
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaintId,
+                SenderType = senderType,
+                SenderId = senderId,
+                Message = dto.Message.Trim(),
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _complaintRepo.AddMessageAsync(message);
+            await NotifyMessageRecipientsAsync(complaint, message);
+            return MapMessageToDto(message);
+        }
+
+        public async Task<IEnumerable<ComplaintMessageResponseDto>> GetMessagesAsync(Guid complaintId)
+        {
+            _ = await _complaintRepo.GetByIdAsync(complaintId)
+                ?? throw new KeyNotFoundException("Complaint not found.");
+
+            var messages = await _complaintRepo.GetMessagesAsync(complaintId);
+            return messages.Select(MapMessageToDto);
+        }
+
+        public async Task<ComplaintMessageResponseDto> MarkMessageAsReadAsync(
+            Guid complaintId,
+            Guid messageId)
+        {
+            var message = await _complaintRepo.GetMessageByIdAsync(complaintId, messageId)
+                ?? throw new KeyNotFoundException("Message not found.");
+
+            message.IsRead = true;
+            await _complaintRepo.UpdateMessageAsync(message);
+            return MapMessageToDto(message);
+        }
+
+        public async Task<ComplaintFeedbackResponseDto> SubmitFeedbackAsync(
+            Guid complaintId,
+            SubmitFeedbackDto dto,
+            Guid submittedById,
+            bool isInternalUser)
+        {
+            var complaint = await _complaintRepo.GetByIdAsync(complaintId)
+                ?? throw new KeyNotFoundException("Complaint not found.");
+
+            if (complaint.Status != ComplaintStatus.Resolved &&
+                complaint.Status != ComplaintStatus.Closed)
+                throw new InvalidOperationException("Feedback can be submitted only after resolution.");
+
+            if (dto.Rating < 1 || dto.Rating > 5)
+                throw new InvalidOperationException("Rating must be between 1 and 5.");
+
+            var existing = await _complaintRepo.GetFeedbackAsync(complaintId);
+            if (existing != null)
+                throw new InvalidOperationException("Feedback already exists for this complaint.");
+
+            var feedback = new ComplaintFeedback
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaintId,
+                CitizenId = complaint.CitizenId,
+                Rating = dto.Rating,
+                Comments = dto.Comments,
+                CollectedById = isInternalUser ? submittedById : null,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _complaintRepo.AddFeedbackAsync(feedback);
+            return MapFeedbackToDto(feedback);
+        }
+
+        public async Task<ComplaintFeedbackResponseDto> GetFeedbackAsync(Guid complaintId)
+        {
+            _ = await _complaintRepo.GetByIdAsync(complaintId)
+                ?? throw new KeyNotFoundException("Complaint not found.");
+
+            var feedback = await _complaintRepo.GetFeedbackAsync(complaintId)
+                ?? throw new KeyNotFoundException("Feedback not found.");
+
+            return MapFeedbackToDto(feedback);
+        }
+
         // ── Helpers ────────────────────────────────────────────────
 
         private MediaType DetermineMediaType(string contentType) =>
@@ -277,6 +382,21 @@ namespace Application.Services
 
             if (!allowed.Contains(next))
                 throw new InvalidOperationException($"Invalid status transition from {current} to {next}.");
+        }
+
+        private static SenderType ResolveSenderType(SenderType? requested, bool isInternalUser)
+        {
+            if (!isInternalUser)
+            {
+                if (requested.HasValue && requested.Value != SenderType.Citizen)
+                    throw new InvalidOperationException("Citizens can send only citizen messages.");
+                return SenderType.Citizen;
+            }
+
+            if (requested == SenderType.System)
+                return SenderType.System;
+
+            return SenderType.Agent;
         }
 
         private async Task CreateITopTicketMappingAsync(Complaint complaint)
@@ -346,6 +466,28 @@ namespace Application.Services
             }).ToList()
         };
 
+        private static ComplaintMessageResponseDto MapMessageToDto(ComplaintMessage m) => new()
+        {
+            Id = m.Id,
+            ComplaintId = m.ComplaintId,
+            SenderType = m.SenderType.ToString(),
+            SenderId = m.SenderId,
+            Message = m.Message,
+            IsRead = m.IsRead,
+            CreatedAt = m.CreatedAt
+        };
+
+        private static ComplaintFeedbackResponseDto MapFeedbackToDto(ComplaintFeedback f) => new()
+        {
+            Id = f.Id,
+            ComplaintId = f.ComplaintId,
+            CitizenId = f.CitizenId,
+            Rating = f.Rating,
+            Comments = f.Comments,
+            CollectedById = f.CollectedById,
+            CreatedAt = f.CreatedAt
+        };
+
         private async Task SyncStatusToITopAsync(
             Complaint complaint,
             UpdateComplaintStatusDto dto)
@@ -410,6 +552,140 @@ namespace Application.Services
                 : $"Attachment sync failed for {media.FileName}: {result.Error}";
 
             await _complaintRepo.UpdateITopMappingAsync(mapping);
+        }
+
+        private async Task NotifyAssignersAsync(Complaint complaint)
+        {
+            var assigners = await _userRepo.GetByRoleAsync(UserRole.Assigner);
+            await NotifyUsersAsync(
+                assigners.Select(u => u.Id),
+                SenderType.Agent,
+                complaint.Id,
+                NotificationType.ComplaintSubmitted,
+                $"New complaint {complaint.RefNumber} has been submitted.");
+        }
+
+        private async Task NotifyDepartmentAssignedAsync(Complaint complaint)
+        {
+            await NotifyCitizenAsync(
+                complaint,
+                NotificationType.ComplaintAssigned,
+                $"Your complaint {complaint.RefNumber} has been assigned to a department.");
+
+            if (complaint.AssignedDepartmentId.HasValue)
+            {
+                var agents = await _userRepo.GetByRoleAndDepartmentAsync(
+                    UserRole.FieldAgent,
+                    complaint.AssignedDepartmentId.Value);
+
+                await NotifyUsersAsync(
+                    agents.Select(a => a.Id),
+                    SenderType.Agent,
+                    complaint.Id,
+                    NotificationType.ComplaintAssigned,
+                    $"Complaint {complaint.RefNumber} has been assigned to your department.");
+            }
+        }
+
+        private async Task NotifyStatusChangedAsync(Complaint complaint, ComplaintStatus status)
+        {
+            if (status == ComplaintStatus.InProgress)
+            {
+                await NotifyCitizenAsync(
+                    complaint,
+                    NotificationType.ComplaintInProgress,
+                    $"Your complaint {complaint.RefNumber} is now in progress.");
+            }
+            else if (status == ComplaintStatus.Resolved)
+            {
+                await NotifyCitizenAsync(
+                    complaint,
+                    NotificationType.ComplaintResolved,
+                    $"Your complaint {complaint.RefNumber} has been resolved. Please share feedback.");
+            }
+        }
+
+        private async Task NotifyMessageRecipientsAsync(Complaint complaint, ComplaintMessage message)
+        {
+            if (message.SenderType == SenderType.Citizen)
+            {
+                if (complaint.AssignedAgentId.HasValue)
+                {
+                    await NotifyUserAsync(
+                        SenderType.Agent,
+                        complaint.AssignedAgentId.Value,
+                        complaint.Id,
+                        NotificationType.MessageReceived,
+                        $"New citizen message on complaint {complaint.RefNumber}.");
+                    return;
+                }
+
+                var assigners = await _userRepo.GetByRoleAsync(UserRole.Assigner);
+                await NotifyUsersAsync(
+                    assigners.Select(u => u.Id),
+                    SenderType.Agent,
+                    complaint.Id,
+                    NotificationType.MessageReceived,
+                    $"New citizen message on complaint {complaint.RefNumber}.");
+            }
+            else
+            {
+                await NotifyCitizenAsync(
+                    complaint,
+                    NotificationType.MessageReceived,
+                    $"New message on your complaint {complaint.RefNumber}.");
+            }
+        }
+
+        private async Task NotifyCitizenAsync(
+            Complaint complaint,
+            NotificationType type,
+            string message)
+        {
+            await NotifyUserAsync(SenderType.Citizen, complaint.CitizenId, complaint.Id, type, message);
+        }
+
+        private async Task NotifyUserAsync(
+            SenderType userType,
+            Guid userId,
+            Guid complaintId,
+            NotificationType type,
+            string message)
+        {
+            await _notificationRepo.AddAsync(new Core.Entities.Notification
+            {
+                Id = Guid.NewGuid(),
+                UserType = userType,
+                UserId = userId,
+                ComplaintId = complaintId,
+                Type = type,
+                Message = message,
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        private async Task NotifyUsersAsync(
+            IEnumerable<Guid> userIds,
+            SenderType userType,
+            Guid complaintId,
+            NotificationType type,
+            string message)
+        {
+            var notifications = userIds.Distinct().Select(userId => new Core.Entities.Notification
+            {
+                Id = Guid.NewGuid(),
+                UserType = userType,
+                UserId = userId,
+                ComplaintId = complaintId,
+                Type = type,
+                Message = message,
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            }).ToList();
+
+            if (notifications.Count > 0)
+                await _notificationRepo.AddRangeAsync(notifications);
         }
     }
 }

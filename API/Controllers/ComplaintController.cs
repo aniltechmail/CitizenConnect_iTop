@@ -95,6 +95,116 @@ namespace API.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/messages")]
+        public async Task<IActionResult> SendMessage(
+            Guid id,
+            [FromBody] SendComplaintMessageDto dto)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _complaintService.SendMessageAsync(
+                    id,
+                    dto,
+                    GetUserId(),
+                    IsInternalUser());
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("{id:guid}/messages")]
+        public async Task<IActionResult> GetMessages(Guid id)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _complaintService.GetMessagesAsync(id);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{id:guid}/messages/{msgId:guid}/read")]
+        public async Task<IActionResult> MarkMessageAsRead(Guid id, Guid msgId)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _complaintService.MarkMessageAsReadAsync(id, msgId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("{id:guid}/feedback")]
+        public async Task<IActionResult> SubmitFeedback(
+            Guid id,
+            [FromBody] SubmitFeedbackDto dto)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _complaintService.SubmitFeedbackAsync(
+                    id,
+                    dto,
+                    GetUserId(),
+                    IsInternalUser());
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("{id:guid}/feedback")]
+        public async Task<IActionResult> GetFeedback(Guid id)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _complaintService.GetFeedbackAsync(id);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
         // ── Internal User Endpoints ────────────────────────────────
 
         [HttpGet]

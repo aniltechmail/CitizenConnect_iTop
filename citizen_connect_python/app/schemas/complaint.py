@@ -41,6 +41,11 @@ class SenderTypeEnum:
     Agent = 1
     System = 2
 
+    @staticmethod
+    def to_string(value: int) -> str:
+        mapping = {0: "Citizen", 1: "Agent", 2: "System"}
+        return mapping.get(value, "Unknown")
+
 
 # ── Request Schemas ────────────────────────────────────────────────────────
 
@@ -102,6 +107,37 @@ class UpdateStatusSchema(BaseModel):
         return v
 
 
+class SendMessageSchema(BaseModel):
+    message: str
+    sender_type: Optional[int] = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Message is required")
+        return v.strip()
+
+    @field_validator("sender_type")
+    @classmethod
+    def validate_sender_type(cls, v: int | None) -> int | None:
+        if v is not None and v not in [0, 1, 2]:
+            raise ValueError("Invalid sender type")
+        return v
+
+
+class SubmitFeedbackSchema(BaseModel):
+    rating: int
+    comments: Optional[str] = None
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v: int) -> int:
+        if v < 1 or v > 5:
+            raise ValueError("Rating must be between 1 and 5")
+        return v
+
+
 # ── Response Schemas ───────────────────────────────────────────────────────
 
 class ComplaintMediaResponseSchema(BaseModel):
@@ -110,6 +146,30 @@ class ComplaintMediaResponseSchema(BaseModel):
     file_name: str
     file_url: str
     file_size: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ComplaintMessageResponseSchema(BaseModel):
+    id: uuid.UUID
+    complaint_id: uuid.UUID
+    sender_type: str
+    sender_id: uuid.UUID
+    message: str
+    is_read: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ComplaintFeedbackResponseSchema(BaseModel):
+    id: uuid.UUID
+    complaint_id: uuid.UUID
+    citizen_id: uuid.UUID
+    rating: int
+    comments: Optional[str] = None
+    collected_by_id: Optional[uuid.UUID] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
