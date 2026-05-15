@@ -29,6 +29,13 @@ namespace Infrastructure.Repositories
                 .Where(u => u.Role == role && u.IsActive)
                 .ToListAsync();
 
+        public async Task<IEnumerable<InternalUser>> GetByRoleAndDepartmentAsync(UserRole role, int departmentId) =>
+            await _db.InternalUsers
+                .Where(u => u.Role == role &&
+                            u.DepartmentId == departmentId &&
+                            u.IsActive)
+                .ToListAsync();
+
         public async Task UpdateAsync(InternalUser user)
         {
             _db.InternalUsers.Update(user);

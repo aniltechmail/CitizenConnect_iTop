@@ -29,6 +29,11 @@ namespace Core.Interfaces.Repositories
         Task UpdateAsync(Complaint complaint);
         Task AddMediaAsync(ComplaintMedia media);
         Task AddMessageAsync(ComplaintMessage message);
+        Task<IEnumerable<ComplaintMessage>> GetMessagesAsync(Guid complaintId);
+        Task<ComplaintMessage?> GetMessageByIdAsync(Guid complaintId, Guid messageId);
+        Task UpdateMessageAsync(ComplaintMessage message);
+        Task AddFeedbackAsync(ComplaintFeedback feedback);
+        Task<ComplaintFeedback?> GetFeedbackAsync(Guid complaintId);
         Task AddITopMappingAsync(ComplaintITopMapping mapping);
         Task<string> GenerateRefNumberAsync();
         Task<ComplaintITopMapping?> GetITopMappingByComplaintIdAsync(Guid complaintId);

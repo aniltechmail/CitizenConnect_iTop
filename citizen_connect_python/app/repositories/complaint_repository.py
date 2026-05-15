@@ -111,6 +111,46 @@ class ComplaintRepository:
         await self.db.refresh(message)
         return message
 
+    async def get_messages(self, complaint_id: uuid.UUID) -> list[ComplaintMessage]:
+        result = await self.db.execute(
+            select(ComplaintMessage)
+            .where(ComplaintMessage.complaint_id == complaint_id)
+            .order_by(ComplaintMessage.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_message_by_id(
+        self,
+        complaint_id: uuid.UUID,
+        message_id: uuid.UUID
+    ) -> ComplaintMessage | None:
+        result = await self.db.execute(
+            select(ComplaintMessage)
+            .where(
+                ComplaintMessage.complaint_id == complaint_id,
+                ComplaintMessage.id == message_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_message(self, message: ComplaintMessage) -> ComplaintMessage:
+        await self.db.flush()
+        await self.db.refresh(message)
+        return message
+
+    async def add_feedback(self, feedback: ComplaintFeedback) -> ComplaintFeedback:
+        self.db.add(feedback)
+        await self.db.flush()
+        await self.db.refresh(feedback)
+        return feedback
+
+    async def get_feedback(self, complaint_id: uuid.UUID) -> ComplaintFeedback | None:
+        result = await self.db.execute(
+            select(ComplaintFeedback)
+            .where(ComplaintFeedback.complaint_id == complaint_id)
+        )
+        return result.scalar_one_or_none()
+
     async def add_itop_mapping(
         self, mapping: ComplaintITopMapping
     ) -> ComplaintITopMapping:

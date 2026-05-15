@@ -5,3 +5,4 @@ from app.models.complaint import (
     Complaint, ComplaintMedia, ComplaintMessage,
     ComplaintFeedback, ComplaintITopMapping
 )
+from app.models.notification import Notification

@@ -11,7 +11,9 @@ from app.services.complaint_service import ComplaintService
 from app.schemas.complaint import (
     SubmitComplaintSchema, AssignDepartmentSchema,
     UpdateStatusSchema, ComplaintResponseSchema,
-    ComplaintMediaResponseSchema, PagedComplaintsSchema
+    ComplaintMediaResponseSchema, PagedComplaintsSchema,
+    SendMessageSchema, ComplaintMessageResponseSchema,
+    SubmitFeedbackSchema, ComplaintFeedbackResponseSchema
 )
 
 router = APIRouter(prefix="/api/complaint", tags=["Complaint"])
@@ -148,6 +150,93 @@ async def upload_media(
 
 
 # ── Internal User Endpoints ────────────────────────────────────────────────
+
+@router.post("/{complaint_id}/messages", response_model=ComplaintMessageResponseSchema)
+async def send_message(
+    complaint_id: uuid.UUID,
+    dto: SendMessageSchema,
+    payload: dict = Depends(decode_token),
+    service: ComplaintService = Depends(get_complaint_service)
+):
+    try:
+        complaint = await service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await service.send_message(
+            complaint_id,
+            dto,
+            uuid.UUID(payload["sub"]),
+            payload.get("user_type") == "internal"
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{complaint_id}/messages", response_model=list[ComplaintMessageResponseSchema])
+async def get_messages(
+    complaint_id: uuid.UUID,
+    payload: dict = Depends(decode_token),
+    service: ComplaintService = Depends(get_complaint_service)
+):
+    try:
+        complaint = await service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await service.get_messages(complaint_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("/{complaint_id}/messages/{message_id}/read", response_model=ComplaintMessageResponseSchema)
+async def mark_message_as_read(
+    complaint_id: uuid.UUID,
+    message_id: uuid.UUID,
+    payload: dict = Depends(decode_token),
+    service: ComplaintService = Depends(get_complaint_service)
+):
+    try:
+        complaint = await service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await service.mark_message_as_read(complaint_id, message_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{complaint_id}/feedback", response_model=ComplaintFeedbackResponseSchema)
+async def submit_feedback(
+    complaint_id: uuid.UUID,
+    dto: SubmitFeedbackSchema,
+    payload: dict = Depends(decode_token),
+    service: ComplaintService = Depends(get_complaint_service)
+):
+    try:
+        complaint = await service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await service.submit_feedback(
+            complaint_id,
+            dto,
+            uuid.UUID(payload["sub"]),
+            payload.get("user_type") == "internal"
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{complaint_id}/feedback", response_model=ComplaintFeedbackResponseSchema)
+async def get_feedback(
+    complaint_id: uuid.UUID,
+    payload: dict = Depends(decode_token),
+    service: ComplaintService = Depends(get_complaint_service)
+):
+    try:
+        complaint = await service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await service.get_feedback(complaint_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 
 @router.get("", response_model=PagedComplaintsSchema)
 async def get_all_complaints(

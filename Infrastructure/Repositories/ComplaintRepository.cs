@@ -103,6 +103,32 @@ namespace Infrastructure.Repositories
             await _db.SaveChangesAsync();
         }
 
+        public async Task<IEnumerable<ComplaintMessage>> GetMessagesAsync(Guid complaintId) =>
+            await _db.ComplaintMessages
+                .Where(m => m.ComplaintId == complaintId)
+                .OrderBy(m => m.CreatedAt)
+                .ToListAsync();
+
+        public async Task<ComplaintMessage?> GetMessageByIdAsync(Guid complaintId, Guid messageId) =>
+            await _db.ComplaintMessages
+                .FirstOrDefaultAsync(m => m.ComplaintId == complaintId && m.Id == messageId);
+
+        public async Task UpdateMessageAsync(ComplaintMessage message)
+        {
+            _db.ComplaintMessages.Update(message);
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task AddFeedbackAsync(ComplaintFeedback feedback)
+        {
+            _db.ComplaintFeedbacks.Add(feedback);
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task<ComplaintFeedback?> GetFeedbackAsync(Guid complaintId) =>
+            await _db.ComplaintFeedbacks
+                .FirstOrDefaultAsync(f => f.ComplaintId == complaintId);
+
         public async Task AddITopMappingAsync(ComplaintITopMapping mapping)
         {
             _db.ComplaintITopMappings.Add(mapping);

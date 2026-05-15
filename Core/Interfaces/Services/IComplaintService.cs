@@ -19,5 +19,10 @@ namespace Core.Interfaces.Services
         Task<ComplaintResponseDto> AssignAgentAsync(Guid complaintId,Guid agentId,Guid assignedById);
         Task<ComplaintResponseDto> UpdateStatusAsync(Guid complaintId,UpdateComplaintStatusDto dto,Guid updatedById);
         Task<ComplaintMediaResponseDto> UploadMediaAsync(Guid complaintId,IFormFile file,Guid uploadedById);
+        Task<ComplaintMessageResponseDto> SendMessageAsync(Guid complaintId,SendComplaintMessageDto dto,Guid senderId,bool isInternalUser);
+        Task<IEnumerable<ComplaintMessageResponseDto>> GetMessagesAsync(Guid complaintId);
+        Task<ComplaintMessageResponseDto> MarkMessageAsReadAsync(Guid complaintId,Guid messageId);
+        Task<ComplaintFeedbackResponseDto> SubmitFeedbackAsync(Guid complaintId,SubmitFeedbackDto dto,Guid submittedById,bool isInternalUser);
+        Task<ComplaintFeedbackResponseDto> GetFeedbackAsync(Guid complaintId);
     }
 }

@@ -29,11 +29,13 @@ namespace API
             builder.Services.AddScoped<ICitizenRepository, CitizenRepository>();
             builder.Services.AddScoped<IComplaintRepository, ComplaintRepository>();
             builder.Services.AddScoped<IInternalUserRepository, InternalUserRepository>();
+            builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 
             // Services
             builder.Services.AddScoped<ILocationService, LocationService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IComplaintService, ComplaintService>();
+            builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddScoped<IStorageService, LocalStorageService>();
             builder.Services.AddHttpClient<IITopTicketAdapter, ITopTicketAdapter>();
 

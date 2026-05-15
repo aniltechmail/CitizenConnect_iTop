@@ -12,6 +12,7 @@ namespace Core.Interfaces.Repositories
         Task<InternalUser?> GetByIdAsync(Guid id);
         Task<InternalUser?> GetByEmailAsync(string email);
         Task<IEnumerable<InternalUser>> GetByRoleAsync(Enums.UserRole role);
+        Task<IEnumerable<InternalUser>> GetByRoleAndDepartmentAsync(Enums.UserRole role, int departmentId);
         Task UpdateAsync(InternalUser user);
     }
 }
