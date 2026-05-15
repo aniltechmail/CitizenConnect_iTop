@@ -274,6 +274,67 @@ namespace Infrastructure.ITop
             }
         }
 
+        public async Task<ITopTicketUpdateResult> AddTicketLogAsync(
+            ITopTicketLogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (!bool.TryParse(_config["ITop:Enabled"], out var enabled) || !enabled)
+                return ITopTicketUpdateResult.Skipped("iTop integration is disabled.");
+
+            var baseUrl = _config["ITop:BaseUrl"];
+            var username = _config["ITop:Username"];
+            var password = _config["ITop:Password"];
+
+            if (string.IsNullOrWhiteSpace(baseUrl) ||
+                string.IsNullOrWhiteSpace(username) ||
+                string.IsNullOrWhiteSpace(password))
+                return ITopTicketUpdateResult.Skipped("iTop credentials missing.");
+
+            var fields = new Dictionary<string, object>
+            {
+                [request.IsPrivate ? "private_log" : "public_log"] = request.Message
+            };
+
+            var payload = new
+            {
+                operation = "core/update",
+                @class = request.ITopClass,
+                key = $"SELECT {request.ITopClass} WHERE id = {request.ITopTicketId}",
+                comment = $"Message sync from CitizenConnect [{request.ComplaintRefNumber}]",
+                fields
+            };
+
+            var form = new Dictionary<string, string>
+            {
+                ["auth_user"] = username,
+                ["auth_pwd"] = password,
+                ["json_data"] = JsonSerializer.Serialize(payload)
+            };
+
+            try
+            {
+                var endpoint = $"{baseUrl.TrimEnd('/')}/webservices/rest.php" +
+                               $"?version={_config["ITop:ApiVersion"] ?? "1.3"}";
+
+                using var response = await _httpClient.PostAsync(
+                    endpoint,
+                    new FormUrlEncodedContent(form),
+                    cancellationToken);
+
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                    return ITopTicketUpdateResult.Failed(
+                        $"iTop returned HTTP {(int)response.StatusCode}: {body}");
+
+                return ParseUpdateResponse(body);
+            }
+            catch (Exception ex)
+            {
+                return ITopTicketUpdateResult.Failed(ex.Message);
+            }
+        }
+
         private static string MapStatusToITop(string appStatus) =>
             appStatus switch
             {

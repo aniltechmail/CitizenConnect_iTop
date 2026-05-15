@@ -276,6 +276,7 @@ namespace Application.Services
             };
 
             await _complaintRepo.AddMessageAsync(message);
+            await SyncMessageToITopAsync(complaint, message);
             await NotifyMessageRecipientsAsync(complaint, message);
             return MapMessageToDto(message);
         }
@@ -552,6 +553,47 @@ namespace Application.Services
                 : $"Attachment sync failed for {media.FileName}: {result.Error}";
 
             await _complaintRepo.UpdateITopMappingAsync(mapping);
+        }
+
+        private async Task SyncMessageToITopAsync(Complaint complaint, ComplaintMessage message)
+        {
+            var mapping = await _complaintRepo
+                .GetITopMappingByComplaintIdAsync(complaint.Id);
+
+            if (mapping == null || mapping.SyncStatus != SyncStatus.Synced)
+                return;
+
+            var result = await _itopAdapter.AddTicketLogAsync(new ITopTicketLogRequest
+            {
+                ITopTicketId = mapping.ITopTicketId,
+                ITopClass = mapping.ITopClass,
+                ComplaintRefNumber = complaint.RefNumber,
+                Message = FormatITopMessageLog(message),
+                IsPrivate = message.SenderType == SenderType.System
+            });
+
+            if (!result.WasAttempted)
+                return;
+
+            mapping.LastSyncedAt = result.Success ? DateTime.UtcNow : mapping.LastSyncedAt;
+            mapping.LastSyncError = result.Success
+                ? null
+                : $"Message sync failed for {message.Id}: {result.Error}";
+
+            await _complaintRepo.UpdateITopMappingAsync(mapping);
+        }
+
+        private static string FormatITopMessageLog(ComplaintMessage message)
+        {
+            var sender = message.SenderType switch
+            {
+                SenderType.Citizen => "Citizen",
+                SenderType.Agent => "Agent",
+                SenderType.System => "System",
+                _ => "Unknown"
+            };
+
+            return $"[{sender}] {message.Message}";
         }
 
         private async Task NotifyAssignersAsync(Complaint complaint)

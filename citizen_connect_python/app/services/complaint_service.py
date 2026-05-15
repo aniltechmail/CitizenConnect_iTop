@@ -24,6 +24,7 @@ from app.services.itop_adapter import (
     ITopTicketAdapter,
     ITopTicketCreateRequest,
     ITopTicketUpdateRequest,
+    ITopTicketLogRequest,
     ITopAttachmentCreateRequest
 )
 import uuid
@@ -312,6 +313,7 @@ class ComplaintService:
         )
 
         await self.complaint_repo.add_message(message)
+        await self._sync_message_to_itop(complaint, message)
         await self._notify_message_recipients(complaint, message)
         return self._map_message_to_schema(message)
 
@@ -500,6 +502,45 @@ class ComplaintService:
 
         except Exception as e:
             print(f"[iTop] Failed to sync attachment for complaint {complaint.ref_number}: {e}")
+
+    async def _sync_message_to_itop(
+        self,
+        complaint: Complaint,
+        message: ComplaintMessage
+    ) -> None:
+        try:
+            mapping = await self.complaint_repo.get_itop_mapping_by_complaint_id(
+                complaint.id
+            )
+
+            if not mapping or mapping.sync_status != 1:  # 1 = Synced
+                return
+
+            result = await self.itop_adapter.add_ticket_log(
+                ITopTicketLogRequest(
+                    itop_ticket_id=mapping.itop_ticket_id,
+                    itop_class=mapping.itop_class,
+                    complaint_ref_number=complaint.ref_number,
+                    message=self._format_itop_message_log(message),
+                    is_private=message.sender_type == SenderTypeEnum.System
+                )
+            )
+
+            if not result.was_attempted:
+                return
+
+            if result.success:
+                mapping.last_synced_at = datetime.now(timezone.utc)
+                mapping.last_sync_error = None
+            else:
+                mapping.last_sync_error = (
+                    f"Message sync failed for {message.id}: {result.error}"
+                )
+
+            await self.complaint_repo.update_itop_mapping(mapping)
+
+        except Exception as e:
+            print(f"[iTop] Failed to sync message for complaint {complaint.ref_number}: {e}")
 
     # ── Validation ─────────────────────────────────────────────────────────
 
@@ -740,3 +781,8 @@ class ComplaintService:
             collected_by_id=f.collected_by_id,
             created_at=f.created_at
         )
+
+    @staticmethod
+    def _format_itop_message_log(message: ComplaintMessage) -> str:
+        sender = SenderTypeEnum.to_string(message.sender_type)
+        return f"[{sender}] {message.message}"

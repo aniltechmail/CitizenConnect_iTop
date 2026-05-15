@@ -15,5 +15,9 @@ namespace Core.Interfaces.Services
         Task<ITopAttachmentCreateResult> CreateAttachmentAsync(
             ITopAttachmentCreateRequest request,
             CancellationToken cancellationToken = default);
+
+        Task<ITopTicketUpdateResult> AddTicketLogAsync(
+            ITopTicketLogRequest request,
+            CancellationToken cancellationToken = default);
     }
 }
