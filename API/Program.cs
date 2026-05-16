@@ -3,6 +3,7 @@ using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Infrastructure.Data;
 using Infrastructure.ITop;
+using Infrastructure.Reporting;
 using Infrastructure.Repositories;
 using Infrastructure.Seeds;
 using Infrastructure.Storage;
@@ -39,6 +40,7 @@ namespace API
             builder.Services.AddScoped<IComplaintService, ComplaintService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddScoped<IEscalationService, EscalationService>();
+            builder.Services.AddScoped<IReportingService, ReportingService>();
             builder.Services.AddScoped<IStorageService, LocalStorageService>();
             builder.Services.AddHttpClient<IITopTicketAdapter, ITopTicketAdapter>();
             builder.Services.AddHostedService<SlaEscalationBackgroundService>();
