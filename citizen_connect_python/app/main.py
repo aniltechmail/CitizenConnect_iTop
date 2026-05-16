@@ -1,12 +1,13 @@
 import asyncio
 from contextlib import suppress
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.config import settings
 from app.database import AsyncSessionFactory
-from app.routers import auth, location, complaint, notification, escalation, dashboard, report
+from app.routers import auth, location, complaint, notification, escalation, dashboard, report, master, admin
 from app.services.escalation_service import EscalationService
 
 app = FastAPI(
@@ -36,6 +37,8 @@ app.include_router(notification.router)
 app.include_router(escalation.router)
 app.include_router(dashboard.router)
 app.include_router(report.router)
+app.include_router(master.router)
+app.include_router(admin.router)
 
 
 async def run_escalation_scanner() -> None:
@@ -66,8 +69,35 @@ async def stop_escalation_scanner() -> None:
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {
-        "status": "ok",
-        "app": settings.app_name,
-        "version": settings.app_version
-    }
+    portal_index = Path(__file__).resolve().parents[2] / "web-portal" / "index.html"
+    if portal_index.exists():
+        return FileResponse(portal_index)
+    return {"status": "ok", "app": settings.app_name, "version": settings.app_version}
+
+
+portal_path = Path(__file__).resolve().parents[2] / "web-portal"
+if portal_path.exists():
+    app.mount("/assets", StaticFiles(directory=portal_path), name="portal-assets")
+
+
+@app.get("/styles.css", include_in_schema=False)
+async def portal_styles():
+    return FileResponse(Path(__file__).resolve().parents[2] / "web-portal" / "styles.css")
+
+
+@app.get("/app.js", include_in_schema=False)
+async def portal_app():
+    return FileResponse(Path(__file__).resolve().parents[2] / "web-portal" / "app.js")
+
+
+@app.get("/config.js", include_in_schema=False)
+async def portal_config():
+    return FileResponse(Path(__file__).resolve().parents[2] / "web-portal" / "config.js")
+
+
+@app.get("/{portal_path:path}", include_in_schema=False)
+async def portal_fallback(portal_path: str):
+    if portal_path.startswith(("api/", "swagger", "redoc", "uploads")):
+        raise HTTPException(status_code=404)
+    index = Path(__file__).resolve().parents[2] / "web-portal" / "index.html"
+    return FileResponse(index)

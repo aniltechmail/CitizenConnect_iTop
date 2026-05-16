@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Citizen Connect</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/config.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/dashboard" data-link>
+        <span class="brand-mark">CC</span>
+        <span>
+          <strong>Citizen Connect</strong>
+          <small>Grievance portal</small>
+        </span>
+      </a>
+      <nav id="nav" class="nav"></nav>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menuButton" title="Menu">☰</button>
+        <div>
+          <h1 id="pageTitle">Citizen Connect</h1>
+          <p id="pageSubtitle"></p>
+        </div>
+        <div class="session" id="sessionBox"></div>
+      </header>
+      <section id="alertHost"></section>
+      <section id="app"></section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
