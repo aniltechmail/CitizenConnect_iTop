@@ -4,8 +4,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Infrastructure.Migrations
 {
+    /// <inheritdoc />
     public partial class AddComplaintSlaBreachFlag : Migration
     {
+        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<bool>(
@@ -16,6 +18,7 @@ namespace Infrastructure.Migrations
                 defaultValue: false);
         }
 
+        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
@@ -24,3 +27,4 @@ namespace Infrastructure.Migrations
         }
     }
 }
+
