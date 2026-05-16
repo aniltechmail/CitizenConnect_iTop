@@ -8,6 +8,7 @@ import uuid
 from app.database import get_db
 from app.config import settings
 from app.services.complaint_service import ComplaintService
+from app.services.escalation_service import EscalationService
 from app.schemas.complaint import (
     SubmitComplaintSchema, AssignDepartmentSchema,
     UpdateStatusSchema, ComplaintResponseSchema,
@@ -15,6 +16,7 @@ from app.schemas.complaint import (
     SendMessageSchema, ComplaintMessageResponseSchema,
     SubmitFeedbackSchema, ComplaintFeedbackResponseSchema
 )
+from app.schemas.escalation import EscalationEventResponseSchema
 
 router = APIRouter(prefix="/api/complaint", tags=["Complaint"])
 security = HTTPBearer()
@@ -89,6 +91,10 @@ def ensure_can_access_complaint(complaint: ComplaintResponseSchema, payload: dic
 
 def get_complaint_service(db: AsyncSession = Depends(get_db)) -> ComplaintService:
     return ComplaintService(db)
+
+
+def get_escalation_service(db: AsyncSession = Depends(get_db)) -> EscalationService:
+    return EscalationService(db)
 
 
 # ── Citizen Endpoints ──────────────────────────────────────────────────────
@@ -234,6 +240,21 @@ async def get_feedback(
         complaint = await service.get_by_id(complaint_id)
         ensure_can_access_complaint(complaint, payload)
         return await service.get_feedback(complaint_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{complaint_id}/escalations", response_model=list[EscalationEventResponseSchema])
+async def get_escalations(
+    complaint_id: uuid.UUID,
+    payload: dict = Depends(decode_token),
+    complaint_service: ComplaintService = Depends(get_complaint_service),
+    escalation_service: EscalationService = Depends(get_escalation_service)
+):
+    try:
+        complaint = await complaint_service.get_by_id(complaint_id)
+        ensure_can_access_complaint(complaint, payload)
+        return await escalation_service.get_by_complaint(complaint_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

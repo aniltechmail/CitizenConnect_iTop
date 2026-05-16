@@ -114,6 +114,12 @@ class ITopTicketAdapter:
 
         return await asyncio.to_thread(self._add_ticket_log_sync, request)
 
+    async def add_private_log(
+        self, request: ITopTicketLogRequest
+    ) -> ITopTicketUpdateResult:
+        request.is_private = True
+        return await self.add_ticket_log(request)
+
     async def create_attachment(
         self, request: ITopAttachmentCreateRequest
     ) -> ITopAttachmentCreateResult:

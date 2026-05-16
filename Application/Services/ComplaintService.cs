@@ -14,6 +14,7 @@ namespace Application.Services
         private readonly ILocationRepository _locationRepo;
         private readonly IInternalUserRepository _userRepo;
         private readonly INotificationRepository _notificationRepo;
+        private readonly IEscalationService _escalationService;
         private readonly IStorageService _storage;
         private readonly IITopTicketAdapter _itopAdapter;
 
@@ -22,6 +23,7 @@ namespace Application.Services
             ILocationRepository locationRepo,
             IInternalUserRepository userRepo,
             INotificationRepository notificationRepo,
+            IEscalationService escalationService,
             IStorageService storage,
             IITopTicketAdapter itopAdapter)
         {
@@ -29,6 +31,7 @@ namespace Application.Services
             _locationRepo = locationRepo;
             _userRepo = userRepo;
             _notificationRepo = notificationRepo;
+            _escalationService = escalationService;
             _storage = storage;
             _itopAdapter = itopAdapter;
         }
@@ -194,6 +197,8 @@ namespace Application.Services
             // iTop sync
             await SyncStatusToITopAsync(complaint, dto);
             await NotifyStatusChangedAsync(complaint, dto.Status);
+            if (dto.Status == ComplaintStatus.Resolved || dto.Status == ComplaintStatus.Closed)
+                await _escalationService.ResolveActiveForComplaintAsync(complaint.Id);
 
             var updated = await _complaintRepo.GetByIdAsync(complaintId)!;
             return MapToDto(updated!);

@@ -20,6 +20,7 @@ from app.schemas.complaint import (
 )
 from app.schemas.notification import NotificationType
 from app.services.storage_service import LocalStorageService
+from app.services.escalation_service import EscalationService
 from app.services.itop_adapter import (
     ITopTicketAdapter,
     ITopTicketCreateRequest,
@@ -37,6 +38,7 @@ class ComplaintService:
         self.user_repo = InternalUserRepository(db)
         self.location_repo = LocationRepository(db)
         self.notification_repo = NotificationRepository(db)
+        self.escalation_service = EscalationService(db)
         self.storage = LocalStorageService()
         self.itop_adapter = ITopTicketAdapter()
 
@@ -235,6 +237,8 @@ class ComplaintService:
             remarks=dto.remarks
         )
         await self._notify_status_changed(complaint, dto.status)
+        if dto.status in {ComplaintStatus.Resolved, ComplaintStatus.Closed}:
+            await self.escalation_service.resolve_active_for_complaint(complaint.id)
 
         updated = await self.complaint_repo.get_by_id(complaint_id)
         return self._map_to_schema(updated)

@@ -13,8 +13,14 @@ namespace API.Controllers
     public class ComplaintController : ControllerBase
     {
         private readonly IComplaintService _complaintService;
-        public ComplaintController(IComplaintService complaintService) =>
+        private readonly IEscalationService _escalationService;
+        public ComplaintController(
+            IComplaintService complaintService,
+            IEscalationService escalationService)
+        {
             _complaintService = complaintService;
+            _escalationService = escalationService;
+        }
 
         // ── Citizen Endpoints ──────────────────────────────────────
 
@@ -197,6 +203,24 @@ namespace API.Controllers
                     return Forbid();
 
                 var result = await _complaintService.GetFeedbackAsync(id);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("{id:guid}/escalations")]
+        public async Task<IActionResult> GetEscalations(Guid id)
+        {
+            try
+            {
+                var complaint = await _complaintService.GetByIdAsync(id);
+                if (!CanAccessComplaint(complaint.CitizenId))
+                    return Forbid();
+
+                var result = await _escalationService.GetByComplaintAsync(id);
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)

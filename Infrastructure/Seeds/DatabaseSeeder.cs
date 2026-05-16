@@ -120,7 +120,7 @@ namespace Infrastructure.Seeds
 
         private static async Task SeedInternalUsersAsync(AppDbContext db)
         {
-            if (await db.InternalUsers.AnyAsync()) return;
+            var pwdDepartment = await db.Departments.FirstOrDefaultAsync(x => x.Code == "PWD");
 
             var users = new[]
             {
@@ -159,10 +159,33 @@ namespace Infrastructure.Seeds
             Role = UserRole.Supervisor,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
+        },
+        new InternalUser
+        {
+            FullName = "Test Department Head",
+            Email = "depthead@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("DeptHead@123"),
+            Role = UserRole.DepartmentHead,
+            DepartmentId = pwdDepartment?.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        },
+        new InternalUser
+        {
+            FullName = "Test Top Management",
+            Email = "topmanagement@citizenconnect.in",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("TopMgmt@123"),
+            Role = UserRole.TopManagement,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
         }
     };
 
-            db.InternalUsers.AddRange(users);
+            foreach (var user in users)
+            {
+                if (!await db.InternalUsers.AnyAsync(x => x.Email == user.Email))
+                    db.InternalUsers.Add(user);
+            }
             await db.SaveChangesAsync();
         }
     }

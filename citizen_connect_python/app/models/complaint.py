@@ -20,6 +20,7 @@ class Complaint(Base):
     assigned_at: Mapped[datetime | None] = mapped_column("AssignedAt", DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column("ResolvedAt", DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column("ClosedAt", DateTime(timezone=True), nullable=True)
+    is_sla_breached: Mapped[bool] = mapped_column("IsSlaBreached", Boolean, default=False)
 
     citizen_id: Mapped[uuid.UUID] = mapped_column("CitizenId", Uuid, ForeignKey("citizens.Id"), nullable=False)
     block_id: Mapped[int] = mapped_column("BlockId", Integer, ForeignKey("blocks.Id"), nullable=False)
@@ -94,3 +95,16 @@ class ComplaintITopMapping(Base):
     last_sync_error: Mapped[str | None] = mapped_column("LastSyncError", Text, nullable=True)
 
     complaint: Mapped["Complaint"] = relationship("Complaint", back_populates="itop_mapping")
+
+
+class EscalationEvent(Base):
+    __tablename__ = "escalation_events"
+
+    id: Mapped[uuid.UUID] = mapped_column("Id", Uuid, primary_key=True, default=uuid.uuid4)
+    complaint_id: Mapped[uuid.UUID] = mapped_column("ComplaintId", Uuid, ForeignKey("complaints.Id"), nullable=False)
+    level: Mapped[int] = mapped_column("Level", Integer, nullable=False)
+    reason: Mapped[str] = mapped_column("Reason", Text, nullable=False)
+    triggered_at: Mapped[datetime] = mapped_column("TriggeredAt", DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column("ResolvedAt", DateTime(timezone=True), nullable=True)
+
+    complaint: Mapped["Complaint"] = relationship("Complaint")
