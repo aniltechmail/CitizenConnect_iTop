@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.config import settings
 from app.database import AsyncSessionFactory
-from app.routers import auth, location, complaint, notification, escalation
+from app.routers import auth, location, complaint, notification, escalation, dashboard, report
 from app.services.escalation_service import EscalationService
 
 app = FastAPI(
@@ -34,6 +34,8 @@ app.include_router(location.router)
 app.include_router(complaint.router)
 app.include_router(notification.router)
 app.include_router(escalation.router)
+app.include_router(dashboard.router)
+app.include_router(report.router)
 
 
 async def run_escalation_scanner() -> None:
