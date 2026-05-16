@@ -21,7 +21,14 @@ namespace API
     {
         public static async Task Main(string[] args)
         {
-            var builder = WebApplication.CreateBuilder(args);
+            var contentRoot = Directory.GetCurrentDirectory();
+            var portalPath = Path.GetFullPath(Path.Combine(contentRoot, "..", "web-portal"));
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                ContentRootPath = contentRoot,
+                WebRootPath = Directory.Exists(portalPath) ? portalPath : contentRoot
+            });
 
             // Database
             builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -102,6 +109,8 @@ namespace API
 
             app.UseSwagger();
             app.UseSwaggerUI();
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
             app.UseAuthentication();
             app.UseAuthorization();
 
@@ -115,6 +124,7 @@ namespace API
             });
 
             app.MapControllers();
+            app.MapFallbackToFile("index.html");
             await app.RunAsync();
         }
     }
