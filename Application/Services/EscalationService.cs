@@ -15,19 +15,22 @@ namespace Application.Services
         private readonly IInternalUserRepository _userRepo;
         private readonly INotificationRepository _notificationRepo;
         private readonly IITopTicketAdapter _itopAdapter;
+        private readonly IPushNotificationService _pushNotificationService;
 
         public EscalationService(
             IEscalationRepository escalationRepo,
             IComplaintRepository complaintRepo,
             IInternalUserRepository userRepo,
             INotificationRepository notificationRepo,
-            IITopTicketAdapter itopAdapter)
+            IITopTicketAdapter itopAdapter,
+            IPushNotificationService pushNotificationService)
         {
             _escalationRepo = escalationRepo;
             _complaintRepo = complaintRepo;
             _userRepo = userRepo;
             _notificationRepo = notificationRepo;
             _itopAdapter = itopAdapter;
+            _pushNotificationService = pushNotificationService;
         }
 
         public async Task<int> ScanAsync(CancellationToken cancellationToken = default)
@@ -150,7 +153,15 @@ namespace Application.Services
             }).ToList();
 
             if (notifications.Count > 0)
+            {
                 await _notificationRepo.AddRangeAsync(notifications);
+                await _pushNotificationService.SendManyAsync(
+                    SenderType.Agent,
+                    notifications.Select(x => x.UserId),
+                    "Complaint escalation",
+                    $"Level {level} escalation triggered for complaint {complaint.RefNumber}: {reason}",
+                    complaint.Id);
+            }
         }
 
         private async Task SyncEscalationToITopAsync(Complaint complaint, int level, string reason)

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Core.DTOs.Auth;
 using Core.Entities.Identity;
+using Core.Entities.Mobile;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Infrastructure.Data;
@@ -133,10 +134,26 @@ namespace Application.Services
             return new AuthResponseDto
             {
                 Token = new JwtSecurityTokenHandler().WriteToken(token),
-                RefreshToken = Guid.NewGuid().ToString(),
+                RefreshToken = CreateRefreshToken(userInfo),
                 ExpiresAt = expiry,
                 User = userInfo
             };
+        }
+
+        private string CreateRefreshToken(UserInfoDto userInfo)
+        {
+            var refreshToken = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+            if (userInfo.UserType == "citizen" && Guid.TryParse(userInfo.Id, out var citizenId))
+            {
+                _db.CitizenRefreshTokens.Add(new CitizenRefreshToken
+                {
+                    CitizenId = citizenId,
+                    Token = refreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddDays(30)
+                });
+                _db.SaveChanges();
+            }
+            return refreshToken;
         }
     }
 }

@@ -6,3 +6,4 @@ from app.models.complaint import (
     ComplaintFeedback, ComplaintITopMapping, EscalationEvent
 )
 from app.models.notification import Notification
+from app.models.mobile import CitizenRefreshToken, CitizenOtp, MobileDevice

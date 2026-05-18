@@ -36,5 +36,17 @@ class Settings(BaseSettings):
     itop_service_subcategory_id: str = "16"
     file_storage_base_url: str = "http://localhost:8000/uploads"
 
+    sms_provider_base_url: str = "http://msg.msgclub.net/rest/services/sendSMS/sendGroupSms"
+    sms_provider_auth_key: str = "d269accd9fdd36824632fc1eccabeb"
+    sms_provider_sender_id: str = "MLSMPK"
+    sms_provider_route_id: str = "8"
+    sms_provider_sms_content_type: str = "english"
+
+    otp_expiry_minutes: int = 5
+    otp_max_verify_attempts: int = 5
+    otp_resend_cooldown_seconds: int = 60
+    otp_max_resends_per_day: int = 25
+    otp_fixed_users: str = "9900139826:123456:MLA,8951908951:654321:Citizen"
+
 
 settings = Settings()
