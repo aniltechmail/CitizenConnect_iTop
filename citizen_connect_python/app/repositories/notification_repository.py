@@ -1,17 +1,26 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification
+from app.services.push_notification_service import PushNotificationService
 import uuid
 
 
 class NotificationRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.push = PushNotificationService(db)
 
     async def add(self, notification: Notification) -> Notification:
         self.db.add(notification)
         await self.db.flush()
         await self.db.refresh(notification)
+        await self.push.send(
+            notification.user_type,
+            notification.user_id,
+            "Citizen Connect",
+            notification.message,
+            notification.complaint_id,
+        )
         return notification
 
     async def add_many(self, notifications: list[Notification]) -> None:
@@ -19,6 +28,14 @@ class NotificationRepository:
             return
         self.db.add_all(notifications)
         await self.db.flush()
+        for notification in notifications:
+            await self.push.send(
+                notification.user_type,
+                notification.user_id,
+                "Citizen Connect",
+                notification.message,
+                notification.complaint_id,
+            )
 
     async def get_by_user(self, user_type: int, user_id: uuid.UUID) -> list[Notification]:
         result = await self.db.execute(

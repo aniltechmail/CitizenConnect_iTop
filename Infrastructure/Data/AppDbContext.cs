@@ -2,6 +2,7 @@
 using Core.Entities.Complaint;
 using Core.Entities.Identity;
 using Core.Entities.Location;
+using Core.Entities.Mobile;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -39,6 +40,9 @@ namespace Infrastructure.Data
         public DbSet<SlaPolicy> SlaPolicies => Set<SlaPolicy>();
         public DbSet<EscalationEvent> EscalationEvents => Set<EscalationEvent>();
         public DbSet<Notification> Notifications => Set<Notification>();
+        public DbSet<CitizenRefreshToken> CitizenRefreshTokens => Set<CitizenRefreshToken>();
+        public DbSet<CitizenOtp> CitizenOtps => Set<CitizenOtp>();
+        public DbSet<MobileDevice> MobileDevices => Set<MobileDevice>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

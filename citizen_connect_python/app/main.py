@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.config import settings
 from app.database import AsyncSessionFactory
-from app.routers import auth, location, complaint, notification, escalation, dashboard, report, master, admin
+from app.routers import auth, location, complaint, notification, escalation, dashboard, report, master, admin, mobile_auth, device, mobile_complaint, sync
 from app.services.escalation_service import EscalationService
 
 app = FastAPI(
@@ -25,6 +25,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def api_version_alias(request, call_next):
+    if request.scope["path"].startswith("/api/v1/"):
+        request.scope["path"] = "/api/" + request.scope["path"][8:]
+    return await call_next(request)
+
 # Serve uploaded files statically
 uploads_path = Path("uploads")
 uploads_path.mkdir(exist_ok=True)
@@ -39,6 +46,10 @@ app.include_router(dashboard.router)
 app.include_router(report.router)
 app.include_router(master.router)
 app.include_router(admin.router)
+app.include_router(mobile_auth.router)
+app.include_router(device.router)
+app.include_router(mobile_complaint.router)
+app.include_router(sync.router)
 
 
 async def run_escalation_scanner() -> None:

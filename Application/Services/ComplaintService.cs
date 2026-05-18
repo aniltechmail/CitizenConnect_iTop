@@ -17,6 +17,7 @@ namespace Application.Services
         private readonly IEscalationService _escalationService;
         private readonly IStorageService _storage;
         private readonly IITopTicketAdapter _itopAdapter;
+        private readonly IPushNotificationService _pushNotificationService;
 
         public ComplaintService(
             IComplaintRepository complaintRepo,
@@ -25,7 +26,8 @@ namespace Application.Services
             INotificationRepository notificationRepo,
             IEscalationService escalationService,
             IStorageService storage,
-            IITopTicketAdapter itopAdapter)
+            IITopTicketAdapter itopAdapter,
+            IPushNotificationService pushNotificationService)
         {
             _complaintRepo = complaintRepo;
             _locationRepo = locationRepo;
@@ -34,6 +36,7 @@ namespace Application.Services
             _escalationService = escalationService;
             _storage = storage;
             _itopAdapter = itopAdapter;
+            _pushNotificationService = pushNotificationService;
         }
 
         public async Task<ComplaintResponseDto> SubmitComplaintAsync(Guid citizenId, SubmitComplaintDto dto)
@@ -710,6 +713,7 @@ namespace Application.Services
                 IsRead = false,
                 CreatedAt = DateTime.UtcNow
             });
+            await _pushNotificationService.SendAsync(userType, userId, "Citizen Connect", message, complaintId);
         }
 
         private async Task NotifyUsersAsync(
@@ -732,7 +736,10 @@ namespace Application.Services
             }).ToList();
 
             if (notifications.Count > 0)
+            {
                 await _notificationRepo.AddRangeAsync(notifications);
+                await _pushNotificationService.SendManyAsync(userType, notifications.Select(x => x.UserId), "Citizen Connect", message, complaintId);
+            }
         }
     }
 }

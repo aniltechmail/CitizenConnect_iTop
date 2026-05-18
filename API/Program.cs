@@ -1,8 +1,10 @@
 using Application.Services;
+using Core.DTOs.Mobile;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Infrastructure.Data;
 using Infrastructure.ITop;
+using Infrastructure.Notifications;
 using Infrastructure.Reporting;
 using Infrastructure.Repositories;
 using Infrastructure.Seeds;
@@ -49,8 +51,12 @@ namespace API
             builder.Services.AddScoped<IEscalationService, EscalationService>();
             builder.Services.AddScoped<IReportingService, ReportingService>();
             builder.Services.AddScoped<IStorageService, LocalStorageService>();
+            builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+            builder.Services.AddHttpClient<ISmsService, SmsService>();
             builder.Services.AddHttpClient<IITopTicketAdapter, ITopTicketAdapter>();
             builder.Services.AddHostedService<SlaEscalationBackgroundService>();
+            builder.Services.Configure<SmsProviderOptions>(builder.Configuration.GetSection("SmsProvider"));
+            builder.Services.Configure<OtpSettings>(builder.Configuration.GetSection("OtpSettings"));
 
             // JWT Authentication
             var jwtKey = builder.Configuration["Jwt:Key"]!;
@@ -111,6 +117,12 @@ namespace API
             app.UseSwaggerUI();
             app.UseDefaultFiles();
             app.UseStaticFiles();
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api/v1", out var remaining))
+                    context.Request.Path = $"/api{remaining}";
+                await next();
+            });
             app.UseAuthentication();
             app.UseAuthorization();
 

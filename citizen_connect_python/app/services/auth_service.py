@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.identity import Citizen, InternalUser, UserRole
+from app.models.mobile import CitizenRefreshToken
 from app.repositories.citizen_repository import CitizenRepository
 from app.schemas.auth import (
     CitizenRegisterSchema, LoginSchema, AuthResponseSchema, UserInfoSchema
@@ -81,9 +82,18 @@ class AuthService:
         token = jwt.encode(
             payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
         )
+        refresh_token = str(uuid.uuid4()).replace("-", "") + str(uuid.uuid4()).replace("-", "")
+        self.db.add(CitizenRefreshToken(
+            id=uuid.uuid4(),
+            citizen_id=citizen.id,
+            token=refresh_token,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            is_revoked=False,
+            created_at=datetime.now(timezone.utc)
+        ))
         return AuthResponseSchema(
             token=token,
-            refresh_token=str(uuid.uuid4()),
+            refresh_token=refresh_token,
             expires_at=expiry.isoformat(),
             user=UserInfoSchema(
                 id=str(citizen.id),
